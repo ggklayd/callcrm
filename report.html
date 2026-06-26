@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Отчёт по проекту — CallCRM</title>
+
+  <script type="module">
+    import { initializeApp }                          from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+    import { getFirestore, collection, query, orderBy, onSnapshot }
+      from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+    const firebaseConfig = {
+      apiKey:            "AIzaSyD2ssxYMzVt2IUQ2ujRg_7hu2EO3XwtwNg",
+      authDomain:        "ds-group-c8bb2.firebaseapp.com",
+      projectId:         "ds-group-c8bb2",
+      storageBucket:     "ds-group-c8bb2.firebasestorage.app",
+      messagingSenderId: "238132930383",
+      appId:             "1:238132930383:web:ba08ba7e5f3b38a98c073a",
+      measurementId:     "G-J98Y7SVVKL"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db  = getFirestore(app);
+
+    // Берём project из URL
+    const params    = new URLSearchParams(location.search);
+    const PROJECT   = params.get('project') || 'expodia-2025';
+
+    // Ставим название проекта в шапку
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('proj-name').textContent = PROJECT;
+      document.title = PROJECT + ' — Отчёт';
+    });
+
+    // Все клиенты проекта — realtime listener
+    let allClients = [];
+
+    const q = query(
+      collection(db, 'projects', PROJECT, 'clients'),
+      orderBy('createdAt', 'desc')
+    );
+
+    onSnapshot(q, (snap) => {
+      allClients = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      renderAll();
+    }, (err) => {
+      console.error('Firestore error:', err);
+      document.getElementById('loading').textContent = 'Ошибка загрузки данных.';
+    });
+
+    // ── Рендер ────────────────────────────────────────────────
+    function renderAll() {
+      const filter  = window._activeFilter || 'все';
+      const search  = (window._searchQuery || '').toLowerCase().trim();
+
+      let clients = allClients;
+
+      // Фильтр по результату
+      if (filter !== 'все') {
+        clients = clients.filter(c =>
+          (c.result || '').toLowerCase() === filter.toLowerCase()
+        );
+      }
+
+      // Поиск по названию
+      if (search) {
+        clients = clients.filter(c =>
+          (c.org_name || '').toLowerCase().includes(search) ||
+          (c.phone1   || '').includes(search) ||
+          (c.region   || '').toLowerCase().includes(search)
+        );
+      }
+
+      renderStats(allClients);
+      renderTable(clients);
+      updateFilterCounts(allClients);
+
+      // Скрыть лоадер
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('main-content').style.display = 'block';
+    }
+
+    function renderStats(clients) {
+      const total  = clients.length;
+      const lid    = clients.filter(c => c.result === 'Лид').length;
+      const perz   = clients.filter(c => c.result === 'Перезвонить').length;
+      const otkaz  = clients.filter(c => c.result === 'Отказ').length;
+      const conv   = total > 0 ? Math.round(lid / total * 100) : 0;
+
+      document.getElementById('stat-total').textContent = total;
+      document.getElementById('stat-lid').textContent   = lid;
+      document.getElementById('stat-perz').textContent  = perz;
+      document.getElementById('stat-otkaz').textContent = otkaz;
+      document.getElementById('stat-conv').textContent  = conv + '%';
+    }
+
+    function updateFilterCounts(clients) {
+      const counts = { 'все': clients.length };
+      ['Лид','Перезвонить','В работе','Не дозвонился','Отказ'].forEach(r => {
+        counts[r.toLowerCase()] = clients.filter(c => c.result === r).length;
+      });
+      document.querySelectorAll('.filter-btn').forEach(btn => {
+        const val = btn.dataset.val;
+        const cnt = counts[val] || 0;
+        const badge = btn.querySelector('.f-count');
+        if (badge) badge.textContent = cnt;
+      });
+    }
+
+    function renderTable(clients) {
+      const tbody = document.getElementById('tbody');
+
+      if (clients.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="7" style="text-align:center;padding:32px;color:var(--muted)">
+              Нет данных по выбранным фильтрам
+            </td>
+          </tr>`;
+        return;
+      }
+
+      tbody.innerHTML = clients.map(c => {
+        const res    = c.result || '';
+        const badge  = getBadge(res);
+        const date   = formatDate(c.createdAt);
+        const note   = esc(c.note || '');
+        return `
+          <tr>
+            <td class="td-org">${esc(c.org_name || '—')}</td>
+            <td class="td-muted">${esc(c.phone1 || '—')}</td>
+            <td class="td-muted">${esc(c.region || '—')}</td>
+            <td>${esc(c.lpr_name || '—')}</td>
+            <td><span class="badge ${badge.cls}">${esc(res) || '—'}</span></td>
+            <td class="td-note td-muted" title="${note}">${note || '—'}</td>
+            <td class="td-muted">${date}</td>
+          </tr>`;
+      }).join('');
+    }
+
+    function getBadge(result) {
+      const map = {
+        'Лид':            'b-lid',
+        'Перезвонить':    'b-perz',
+        'В работе':       'b-work',
+        'Не дозвонился':  'b-nedoz',
+        'Отказ':          'b-otkaz',
+      };
+      return { cls: map[result] || '' };
+    }
+
+    function formatDate(ts) {
+      if (!ts) return '—';
+      try {
+        const d = ts.toDate ? ts.toDate() : new Date(ts);
+        return d.toLocaleDateString('ru-RU', { day:'2-digit', month:'2-digit' });
+      } catch { return '—'; }
+    }
+
+    function esc(s) {
+      return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    // ── Экспорт CSV ───────────────────────────────────────────
+    window.exportCSV = function() {
+      const rows = [
+        ['Организация','Телефон','Регион','Имя ЛПР','Результат','Примечание','Менеджер','Дата'],
+        ...allClients.map(c => [
+          c.org_name || '', c.phone1 || '', c.region || '',
+          c.lpr_name || '', c.result || '', c.note || '',
+          c.manager || '',
+          c.createdAt ? (c.createdAt.toDate ? c.createdAt.toDate().toLocaleDateString('ru-RU') : '') : ''
+        ])
+      ];
+      const csv  = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url; a.download = PROJECT + '-отчёт.csv'; a.click();
+      URL.revokeObjectURL(url);
+    };
+
+    // ── Фильтры и поиск (глобальные) ─────────────────────────
+    window._activeFilter = 'все';
+    window._searchQuery  = '';
+
+    window.setFilter = function(btn, val) {
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      window._activeFilter = val;
+      renderAll();
+    };
+
+    window.onSearch = function(val) {
+      window._searchQuery = val;
+      renderAll();
+    };
+  </script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0f1117;
+      --surf:     #1a1d27;
+      --surf2:    #222538;
+      --brd:      rgba(255,255,255,.1);
+      --brd-s:    rgba(255,255,255,.18);
+      --accent:   #4f6fff;
+      --text:     #e8eaf6;
+      --muted:    #7b82a8;
+      --success:  #22c55e;
+      --suc-bg:   rgba(34,197,94,.12);
+      --warn:     #fbbf24;
+      --warn-bg:  rgba(251,191,36,.12);
+      --blue-bg:  rgba(79,111,255,.14);
+      --err:      #f87171;
+      --err-bg:   rgba(248,113,113,.12);
+      --ora:      #fb923c;
+      --ora-bg:   rgba(251,146,60,.12);
+      --rad:      8px;
+    }
+
+    html, body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── ТОПБАР ───────────────────────────────────────────── */
+    .topbar {
+      display: flex; align-items: center; gap: 12px;
+      padding: 11px 20px;
+      background: var(--surf);
+      border-bottom: 1px solid var(--brd);
+      position: sticky; top: 0; z-index: 10;
+    }
+    .t-logo {
+      width: 28px; height: 28px; background: var(--accent);
+      border-radius: 6px; display: flex; align-items: center;
+      justify-content: center; font-size: 14px; flex-shrink: 0;
+    }
+    .t-name  { font-size: 14px; font-weight: 600; }
+    .t-sub   { font-size: 12px; color: var(--muted); margin-top: 1px; }
+    .live-dot {
+      margin-left: auto; display: flex; align-items: center;
+      gap: 6px; font-size: 12px; color: var(--success);
+      background: var(--suc-bg); padding: 4px 12px; border-radius: 20px;
+    }
+    .pulse {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--success);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: .35; }
+    }
+
+    /* ── КОНТЕНТ ──────────────────────────────────────────── */
+    .content { max-width: 1100px; margin: 0 auto; padding: 20px 20px 60px; }
+
+    /* ── СТАТЫ ────────────────────────────────────────────── */
+    .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 20px; }
+    @media (max-width: 700px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+
+    .stat {
+      background: var(--surf); border: 1px solid var(--brd);
+      border-radius: var(--rad); padding: 12px 14px;
+    }
+    .stat-n {
+      font-size: 24px; font-weight: 600; color: var(--text);
+      line-height: 1;
+    }
+    .stat-n.green  { color: var(--success); }
+    .stat-n.yellow { color: var(--warn); }
+    .stat-n.red    { color: var(--err); }
+    .stat-n.blue   { color: var(--accent); }
+    .stat-l { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+    /* ── ЛЕГЕНДА ─────────────────────────────────────────── */
+    .legend {
+      display: flex; gap: 14px; flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+    .leg { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); }
+    .leg-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+    /* ── ФИЛЬТРЫ ─────────────────────────────────────────── */
+    .filter-bar {
+      display: flex; gap: 6px; align-items: center;
+      flex-wrap: wrap; margin-bottom: 14px;
+    }
+    .filter-btn {
+      display: flex; align-items: center; gap: 5px;
+      padding: 5px 12px; border-radius: 20px;
+      border: 1px solid var(--brd-s);
+      background: transparent; color: var(--muted);
+      font-size: 12px; font-weight: 500; cursor: pointer;
+      font-family: inherit; transition: all .12s;
+    }
+    .filter-btn:hover { border-color: var(--text); color: var(--text); }
+    .filter-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .f-count {
+      font-size: 11px; background: rgba(255,255,255,.15);
+      padding: 1px 5px; border-radius: 10px;
+    }
+
+    .search-wrap {
+      margin-left: auto; display: flex; align-items: center;
+      gap: 7px; background: var(--surf2); border: 1px solid var(--brd);
+      border-radius: var(--rad); padding: 6px 12px;
+    }
+    .search-wrap input {
+      background: none; border: none; color: var(--text);
+      font-size: 13px; outline: none; width: 180px;
+      font-family: inherit;
+    }
+    .search-wrap input::placeholder { color: var(--muted); }
+    .search-icon { font-size: 14px; color: var(--muted); }
+
+    /* ── ТАБЛИЦА ─────────────────────────────────────────── */
+    .table-wrap {
+      background: var(--surf); border: 1px solid var(--brd);
+      border-radius: var(--rad); overflow: hidden;
+    }
+    .table-scroll { overflow-x: auto; }
+
+    table {
+      width: 100%; border-collapse: collapse;
+      font-size: 13px; table-layout: fixed;
+    }
+    col.c-org   { width: 20%; }
+    col.c-phone { width: 13%; }
+    col.c-reg   { width: 14%; }
+    col.c-lpr   { width: 11%; }
+    col.c-res   { width: 12%; }
+    col.c-note  { width: 20%; }
+    col.c-date  { width: 10%; }
+
+    thead tr { border-bottom: 1px solid var(--brd-s); }
+    th {
+      padding: 10px 14px; text-align: left;
+      font-size: 11px; font-weight: 500; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .05em;
+      background: var(--surf2); white-space: nowrap;
+    }
+    td {
+      padding: 10px 14px; border-bottom: 1px solid var(--brd);
+      color: var(--text); overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--surf2); }
+
+    .td-org  { font-weight: 500; }
+    .td-muted { color: var(--muted); font-size: 12px; }
+    .td-note { max-width: 200px; }
+
+    /* ── БЕЙДЖИ ──────────────────────────────────────────── */
+    .badge {
+      display: inline-flex; align-items: center;
+      font-size: 11px; font-weight: 600;
+      padding: 3px 9px; border-radius: 20px;
+      white-space: nowrap;
+    }
+    .b-lid   { background: var(--suc-bg);  color: var(--success); }
+    .b-perz  { background: var(--warn-bg); color: var(--warn); }
+    .b-work  { background: var(--blue-bg); color: var(--accent); }
+    .b-nedoz { background: var(--ora-bg);  color: var(--ora); }
+    .b-otkaz { background: var(--err-bg);  color: var(--err); }
+
+    /* ── FOOTER ──────────────────────────────────────────── */
+    .footer {
+      display: flex; align-items: center; gap: 10px;
+      padding: 12px 16px;
+      background: var(--surf2); border-top: 1px solid var(--brd);
+    }
+    .footer-note { font-size: 12px; color: var(--muted); }
+    .btn-csv {
+      margin-left: auto; display: flex; align-items: center; gap: 6px;
+      padding: 6px 14px; border-radius: var(--rad);
+      border: 1px solid var(--brd-s); background: transparent;
+      color: var(--muted); font-size: 12px; font-weight: 500;
+      cursor: pointer; font-family: inherit; transition: all .12s;
+    }
+    .btn-csv:hover { border-color: var(--text); color: var(--text); }
+
+    /* ── ЛОАДЕР ──────────────────────────────────────────── */
+    #loading {
+      display: flex; align-items: center; justify-content: center;
+      min-height: 300px; font-size: 14px; color: var(--muted);
+    }
+    #main-content { display: none; }
+  </style>
+</head>
+<body>
+
+<!-- ТОПБАР -->
+<div class="topbar">
+  <div class="t-logo">📊</div>
+  <div>
+    <div class="t-name" id="proj-name">Загрузка...</div>
+    <div class="t-sub">Отчёт по проекту · только просмотр</div>
+  </div>
+  <div class="live-dot">
+    <div class="pulse"></div>
+    Данные актуальны
+  </div>
+</div>
+
+<!-- ЛОАДЕР -->
+<div class="content">
+  <div id="loading">Загружаю данные...</div>
+
+  <!-- ОСНОВНОЙ КОНТЕНТ -->
+  <div id="main-content">
+
+    <!-- СТАТИСТИКА -->
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-n" id="stat-total">0</div>
+        <div class="stat-l">Всего контактов</div>
+      </div>
+      <div class="stat">
+        <div class="stat-n green" id="stat-lid">0</div>
+        <div class="stat-l">Лидов</div>
+      </div>
+      <div class="stat">
+        <div class="stat-n blue" id="stat-conv">0%</div>
+        <div class="stat-l">Конверсия</div>
+      </div>
+      <div class="stat">
+        <div class="stat-n yellow" id="stat-perz">0</div>
+        <div class="stat-l">Перезвонить</div>
+      </div>
+      <div class="stat">
+        <div class="stat-n red" id="stat-otkaz">0</div>
+        <div class="stat-l">Отказов</div>
+      </div>
+    </div>
+
+    <!-- ЛЕГЕНДА -->
+    <div class="legend">
+      <div class="leg"><div class="leg-dot" style="background:var(--success)"></div>Лид</div>
+      <div class="leg"><div class="leg-dot" style="background:var(--warn)"></div>Перезвонить</div>
+      <div class="leg"><div class="leg-dot" style="background:var(--accent)"></div>В работе</div>
+      <div class="leg"><div class="leg-dot" style="background:var(--ora)"></div>Не дозвонился</div>
+      <div class="leg"><div class="leg-dot" style="background:var(--err)"></div>Отказ</div>
+    </div>
+
+    <!-- ФИЛЬТРЫ -->
+    <div class="filter-bar">
+      <button class="filter-btn active" data-val="все"           onclick="setFilter(this,'все')">Все <span class="f-count">0</span></button>
+      <button class="filter-btn"        data-val="лид"           onclick="setFilter(this,'лид')">Лид <span class="f-count">0</span></button>
+      <button class="filter-btn"        data-val="перезвонить"   onclick="setFilter(this,'перезвонить')">Перезвонить <span class="f-count">0</span></button>
+      <button class="filter-btn"        data-val="в работе"      onclick="setFilter(this,'в работе')">В работе <span class="f-count">0</span></button>
+      <button class="filter-btn"        data-val="не дозвонился" onclick="setFilter(this,'не дозвонился')">Не дозвонился <span class="f-count">0</span></button>
+      <button class="filter-btn"        data-val="отказ"         onclick="setFilter(this,'отказ')">Отказ <span class="f-count">0</span></button>
+      <div class="search-wrap">
+        <span class="search-icon">🔍</span>
+        <input type="text" placeholder="Поиск по организации..." oninput="onSearch(this.value)">
+      </div>
+    </div>
+
+    <!-- ТАБЛИЦА -->
+    <div class="table-wrap">
+      <div class="table-scroll">
+        <table>
+          <colgroup>
+            <col class="c-org">
+            <col class="c-phone">
+            <col class="c-reg">
+            <col class="c-lpr">
+            <col class="c-res">
+            <col class="c-note">
+            <col class="c-date">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Организация</th>
+              <th>Телефон</th>
+              <th>Регион</th>
+              <th>Имя ЛПР</th>
+              <th>Результат</th>
+              <th>Примечание</th>
+              <th>Дата</th>
+            </tr>
+          </thead>
+          <tbody id="tbody">
+            <tr><td colspan="7" style="text-align:center;padding:32px;color:var(--muted)">Загрузка...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- FOOTER ТАБЛИЦЫ -->
+      <div class="footer">
+        <div class="footer-note">🔒 Только просмотр · обновляется автоматически</div>
+        <button class="btn-csv" onclick="exportCSV()">⬇ Скачать CSV</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>
