@@ -39,7 +39,6 @@
       const parts = MANAGER.split(/[\s_-]/);
       const ini   = parts.length >= 2 ? parts[0][0].toUpperCase() + parts[1][0].toUpperCase() : MANAGER.slice(0,2).toUpperCase();
       document.getElementById('m-av').textContent = ini;
-      loadTodayCount();
       loadProjectConfig().then(() => loadAllClients());
     });
 
@@ -124,7 +123,7 @@
       }
     };
 
-    function updateNav() {
+    window.updateNav = function updateNav() {
       const idx   = window._currentIdx;
       const total = window._allClients.length;
       const prev  = document.getElementById('btn-prev-nav');
@@ -133,7 +132,7 @@
       if (next) next.disabled = idx >= total - 1;
     }
 
-    function updateProgress() {
+    window.updateProgress = function updateProgress() {
       const idx   = window._currentIdx;
       const total = window._allClients.length;
       const done  = window._allClients.filter(c => c.status === 'обработан').length;
@@ -170,8 +169,6 @@
 
       try {
         await addDoc(collection(db,'projects',PROJECT_ID,'clients'), clientData);
-        window._todayCount = (window._todayCount||0) + 1;
-        document.getElementById('m-count').textContent = window._todayCount + ' сегодня';
         addToLog(clientData);
         showStatus('ok', '"' + org + '" сохранён');
         clearFormFields();
