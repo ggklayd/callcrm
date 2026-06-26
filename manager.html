@@ -153,7 +153,7 @@
       if (!phone)  { showStatus('err','Укажите телефон'); return; }
       if (!result) { showStatus('err','Выберите результат звонка'); return; }
 
-      setBtnLoad(true);
+      try { setBtnLoad(true); } catch(e) { console.error('setBtnLoad error:', e); }
 
       const c = window._allClients[window._currentIdx] || {};
       const clientData = {
@@ -204,9 +204,10 @@
         }
         updateProgress();
       } catch(err) {
+        console.error('saveClient error:', err.message, err.stack);
         showStatus('err', err.code === 'permission-denied' ? 'Нет прав записи' : 'Ошибка: ' + err.message);
       } finally {
-        setBtnLoad(false);
+        try { setBtnLoad(false); } catch(e) {}
       }
     };
 
