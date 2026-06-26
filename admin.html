@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Кабинет администратора — CallCRM</title>
+
+  <script type="module">
+    import { initializeApp }     from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+    import { getFirestore, collection, doc, addDoc, getDocs, setDoc, deleteDoc, query, orderBy, onSnapshot, serverTimestamp }
+      from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+    const firebaseConfig = {
+      apiKey:            "AIzaSyD2ssxYMzVt2IUQ2ujRg_7hu2EO3XwtwNg",
+      authDomain:        "ds-group-c8bb2.firebaseapp.com",
+      projectId:         "ds-group-c8bb2",
+      storageBucket:     "ds-group-c8bb2.firebasestorage.app",
+      messagingSenderId: "238132930383",
+      appId:             "1:238132930383:web:ba08ba7e5f3b38a98c073a",
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db  = getFirestore(app);
+
+    const BASE_URL = 'https://ggklayd.github.io/callcrm';
+
+    // ── Загрузка проектов ──────────────────────────────────
+    window.projects = {};
+
+    const projectsQuery = query(collection(db, 'admin_projects'), orderBy('createdAt', 'desc'));
+
+    onSnapshot(projectsQuery, (snap) => {
+      window.projects = {};
+      snap.docs.forEach(d => { window.projects[d.id] = { id: d.id, ...d.data() }; });
+      renderProjects();
+    });
+
+    // ── Рендер списка проектов ─────────────────────────────
+    function renderProjects() {
+      const list = document.getElementById('projects-list');
+      const items = Object.values(window.projects);
+
+      if (items.length === 0) {
+        list.innerHTML = `
+          <div class="empty">
+            <div class="empty-icon">📁</div>
+            <div class="empty-title">Нет проектов</div>
+            <div class="empty-sub">Нажмите «Создать проект» чтобы начать</div>
+          </div>`;
+        return;
+      }
+
+      list.innerHTML = items.map(p => `
+        <div class="proj-card" onclick="openProject('${p.id}')">
+          <div class="proj-card-head">
+            <div class="proj-icon">${getIcon(p.name)}</div>
+            <div class="proj-info">
+              <div class="proj-name">${esc(p.name)}</div>
+              <div class="proj-meta">${esc(p.managers ? p.managers.length + ' менеджеров' : '0 менеджеров')} · создан ${formatDate(p.createdAt)}</div>
+            </div>
+            <div class="proj-status ${p.active ? 'active' : 'paused'}">${p.active ? 'Активен' : 'Пауза'}</div>
+          </div>
+          <div class="proj-links" onclick="event.stopPropagation()">
+            <button class="link-btn manager" onclick="copyLink('${BASE_URL}/manager.html?project=${p.id}&manager=', '${p.id}', 'manager')">
+              👤 Кабинет менеджера
+            </button>
+            <button class="link-btn report" onclick="openLink('${BASE_URL}/report.html?project=${p.id}')">
+              👁 Отчёт
+            </button>
+            ${p.sheets_url ? `<button class="link-btn sheets" onclick="openLink('${p.sheets_url}')">📊 Таблица</button>` : ''}
+          </div>
+        </div>`).join('');
+    }
+
+    function getIcon(name) {
+      const colors = ['#4f6fff','#22c55e','#fbbf24','#f87171','#a78bfa','#34d399'];
+      const idx = (name || '').charCodeAt(0) % colors.length;
+      const letter = (name || '?')[0].toUpperCase();
+      return `<div style="width:36px;height:36px;border-radius:8px;background:${colors[idx]};display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600;color:#fff;flex-shrink:0">${letter}</div>`;
+    }
+
+    // ── Создать проект ─────────────────────────────────────
+    window.createProject = async function() {
+      const name   = document.getElementById('new-proj-name').value.trim();
+      const sheets = document.getElementById('new-proj-sheets').value.trim();
+
+      if (!name) { showFormError('Укажите название проекта'); return; }
+
+      // ID из названия: «Экспо 2025» → «expo-2025»
+      const id = name.toLowerCase()
+        .replace(/[а-яё]/g, c => 'abcdefghijklmnopqrstuvwxyz'['абвгдеёжзийклмнопрстуфхцчшщъыьэюя'.indexOf(c)] || c)
+        .replace(/\s+/g, '-')
+        .replace(/[^a-z0-9-]/g, '')
+        .slice(0, 30) + '-' + Date.now().toString(36);
+
+      setBtnLoading('btn-create', true);
+
+      try {
+        await setDoc(doc(db, 'admin_projects', id), {
+          name,
+          sheets_url: sheets || '',
+          active:     true,
+          managers:   [],
+          createdAt:  serverTimestamp(),
+        });
+        closeModal('modal-create');
+        document.getElementById('new-proj-name').value = '';
+        document.getElementById('new-proj-sheets').value = '';
+        showToast('Проект «' + name + '» создан!');
+      } catch (err) {
+        showFormError('Ошибка: ' + err.message);
+      } finally {
+        setBtnLoading('btn-create', false);
+      }
+    };
+
+    // ── Открыть карточку проекта ───────────────────────────
+    window.openProject = function(id) {
+      const p = window.projects[id];
+      if (!p) return;
+
+      document.getElementById('detail-name').textContent    = p.name;
+      document.getElementById('detail-status').textContent  = p.active ? 'Активен' : 'Пауза';
+      document.getElementById('detail-status').className    = 'detail-status ' + (p.active ? 'active' : 'paused');
+      document.getElementById('detail-proj-id').textContent = id;
+
+      const manLink = `${BASE_URL}/manager.html?project=${id}&manager=ИМЯ`;
+      const repLink = `${BASE_URL}/report.html?project=${id}`;
+
+      document.getElementById('link-manager').textContent = manLink;
+      document.getElementById('link-report').textContent  = repLink;
+      document.getElementById('link-sheets').textContent  = p.sheets_url || '—';
+
+      // Список менеджеров
+      const mgrs = p.managers || [];
+      const mgList = document.getElementById('managers-list');
+      mgList.innerHTML = mgrs.length === 0
+        ? '<div class="no-managers">Нет менеджеров. Добавьте ниже.</div>'
+        : mgrs.map(m => `
+            <div class="mgr-item">
+              <div class="mgr-avatar">${m[0].toUpperCase()}</div>
+              <span class="mgr-name">${esc(m)}</span>
+              <button class="mgr-link-btn" onclick="copyManagerLink('${id}','${esc(m)}')">Скопировать ссылку</button>
+              <button class="mgr-del" onclick="removeManager('${id}','${esc(m)}')">✕</button>
+            </div>`).join('');
+
+      window._detailProjectId = id;
+      openModal('modal-detail');
+    };
+
+    // ── Добавить менеджера ────────────────────────────────
+    window.addManager = async function() {
+      const id   = window._detailProjectId;
+      const name = document.getElementById('new-manager').value.trim();
+      if (!name || !id) return;
+
+      const p = window.projects[id];
+      const managers = [...(p.managers || [])];
+      if (managers.includes(name)) { showToast('Менеджер уже добавлен'); return; }
+      managers.push(name);
+
+      try {
+        await setDoc(doc(db, 'admin_projects', id), { managers }, { merge: true });
+        document.getElementById('new-manager').value = '';
+        showToast('Менеджер добавлен');
+      } catch (err) {
+        showToast('Ошибка: ' + err.message);
+      }
+    };
+
+    window.removeManager = async function(projectId, name) {
+      const p = window.projects[projectId];
+      const managers = (p.managers || []).filter(m => m !== name);
+      await setDoc(doc(db, 'admin_projects', projectId), { managers }, { merge: true });
+    };
+
+    window.copyManagerLink = function(projectId, name) {
+      const link = `${BASE_URL}/manager.html?project=${projectId}&manager=${encodeURIComponent(name)}`;
+      navigator.clipboard.writeText(link).then(() => showToast('Ссылка скопирована!')).catch(() => {});
+    };
+
+    // ── Утилиты ───────────────────────────────────────────
+    window.copyLink = function(base, id, type) {
+      let link = base;
+      if (type === 'manager') {
+        const name = prompt('Имя менеджера:');
+        if (!name) return;
+        link = base + encodeURIComponent(name);
+      }
+      navigator.clipboard.writeText(link).then(() => showToast('Ссылка скопирована!')).catch(() => {});
+    };
+
+    window.openLink = function(url) {
+      window.open(url, '_blank');
+    };
+
+    function formatDate(ts) {
+      if (!ts) return '—';
+      try {
+        const d = ts.toDate ? ts.toDate() : new Date(ts);
+        return d.toLocaleDateString('ru-RU', { day:'2-digit', month:'2-digit', year:'2-digit' });
+      } catch { return '—'; }
+    }
+
+    function esc(s) {
+      return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 3000);
+    }
+
+    function showFormError(msg) {
+      const el = document.getElementById('form-error');
+      el.textContent = msg;
+      el.style.display = 'block';
+      setTimeout(() => { el.style.display = 'none'; }, 4000);
+    }
+
+    function setBtnLoading(id, on) {
+      const btn = document.getElementById(id);
+      if (!btn) return;
+      btn.disabled = on;
+      btn.textContent = on ? 'Создаём...' : 'Создать проект';
+    }
+  </script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:     #0f1117; --surf:  #1a1d27; --surf2: #222538;
+      --brd:    rgba(255,255,255,.1); --brd-s: rgba(255,255,255,.18);
+      --accent: #4f6fff; --text:  #e8eaf6; --muted: #7b82a8;
+      --success:#22c55e; --warn:  #fbbf24; --err:   #f87171;
+      --rad: 8px;
+    }
+    body { font-family:'Inter',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100vh; }
+
+    /* ТОПБАР */
+    .topbar { display:flex; align-items:center; gap:12px; padding:11px 20px; background:var(--surf); border-bottom:1px solid var(--brd); position:sticky; top:0; z-index:20; }
+    .t-logo { width:28px; height:28px; background:var(--accent); border-radius:6px; display:flex; align-items:center; justify-content:center; font-size:14px; flex-shrink:0; }
+    .t-title { font-size:15px; font-weight:600; }
+    .t-sub   { font-size:12px; color:var(--muted); margin-top:1px; }
+    .btn-new { margin-left:auto; display:flex; align-items:center; gap:6px; padding:8px 16px; background:var(--accent); color:#fff; border:none; border-radius:var(--rad); font-size:13px; font-weight:600; cursor:pointer; font-family:inherit; transition:opacity .12s; }
+    .btn-new:hover { opacity:.88; }
+
+    /* КОНТЕНТ */
+    .content { max-width:860px; margin:0 auto; padding:24px 20px 60px; }
+    .section-label { font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.07em; margin-bottom:12px; }
+
+    /* КАРТОЧКИ ПРОЕКТОВ */
+    .projects-list { display:flex; flex-direction:column; gap:10px; }
+    .proj-card { background:var(--surf); border:1px solid var(--brd); border-radius:10px; padding:16px 18px; cursor:pointer; transition:border-color .12s; }
+    .proj-card:hover { border-color:var(--brd-s); }
+    .proj-card-head { display:flex; align-items:center; gap:12px; margin-bottom:12px; }
+    .proj-info { flex:1; min-width:0; }
+    .proj-name { font-size:14px; font-weight:600; color:var(--text); }
+    .proj-meta { font-size:12px; color:var(--muted); margin-top:2px; }
+    .proj-status { font-size:11px; font-weight:600; padding:3px 10px; border-radius:20px; white-space:nowrap; }
+    .proj-status.active  { background:rgba(34,197,94,.15); color:var(--success); }
+    .proj-status.paused  { background:rgba(251,191,36,.15); color:var(--warn); }
+
+    /* ССЫЛКИ В КАРТОЧКЕ */
+    .proj-links { display:flex; gap:8px; flex-wrap:wrap; }
+    .link-btn { display:flex; align-items:center; gap:5px; padding:5px 12px; border-radius:20px; border:1px solid var(--brd-s); background:transparent; color:var(--muted); font-size:12px; font-weight:500; cursor:pointer; font-family:inherit; transition:all .12s; }
+    .link-btn:hover { border-color:var(--brd-s); color:var(--text); }
+    .link-btn.manager:hover { border-color:var(--success); color:var(--success); }
+    .link-btn.report:hover  { border-color:var(--accent); color:var(--accent); }
+    .link-btn.sheets:hover  { border-color:var(--warn); color:var(--warn); }
+
+    /* ПУСТОЙ СПИСОК */
+    .empty { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:60px 20px; gap:10px; }
+    .empty-icon  { font-size:48px; }
+    .empty-title { font-size:18px; font-weight:600; color:var(--text); }
+    .empty-sub   { font-size:14px; color:var(--muted); }
+
+    /* МОДАЛКА */
+    .modal-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:100; align-items:center; justify-content:center; padding:20px; }
+    .modal-bg.open { display:flex; }
+    .modal { background:var(--surf); border:1px solid var(--brd-s); border-radius:12px; padding:24px; width:100%; max-width:480px; max-height:90vh; overflow-y:auto; }
+    .modal-title { font-size:18px; font-weight:600; margin-bottom:4px; }
+    .modal-sub   { font-size:13px; color:var(--muted); margin-bottom:20px; }
+    .modal-close { float:right; background:none; border:none; color:var(--muted); font-size:20px; cursor:pointer; margin-top:-4px; }
+
+    /* ПОЛЯ */
+    .field { display:flex; flex-direction:column; gap:5px; margin-bottom:14px; }
+    .field label { font-size:12px; font-weight:500; color:var(--muted); }
+    .field input, .field select {
+      background:var(--surf2); border:1px solid var(--brd); border-radius:var(--rad);
+      color:var(--text); font-size:14px; padding:9px 12px; outline:none; font-family:inherit;
+      transition:border-color .12s;
+    }
+    .field input:focus { border-color:var(--accent); }
+    .field-hint { font-size:11px; color:var(--muted); margin-top:-8px; }
+
+    /* КНОПКИ МОДАЛКИ */
+    .modal-actions { display:flex; gap:8px; margin-top:20px; }
+    .btn-primary { flex:1; padding:10px; background:var(--accent); color:#fff; border:none; border-radius:var(--rad); font-size:14px; font-weight:600; cursor:pointer; font-family:inherit; transition:opacity .12s; }
+    .btn-primary:hover { opacity:.88; }
+    .btn-primary:disabled { opacity:.5; cursor:not-allowed; }
+    .btn-ghost { padding:10px 16px; background:transparent; border:1px solid var(--brd-s); color:var(--muted); border-radius:var(--rad); font-size:14px; cursor:pointer; font-family:inherit; }
+    .btn-ghost:hover { border-color:var(--brd-s); color:var(--text); }
+
+    /* ОШИБКА ФОРМЫ */
+    #form-error { display:none; background:rgba(248,113,113,.12); color:var(--err); border-radius:var(--rad); padding:8px 12px; font-size:13px; margin-bottom:12px; }
+
+    /* ДЕТАЛЬНАЯ КАРТОЧКА ПРОЕКТА */
+    .detail-section { margin-bottom:20px; }
+    .detail-label { font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.07em; margin-bottom:10px; }
+    .detail-status { font-size:12px; font-weight:600; padding:3px 10px; border-radius:20px; display:inline-block; }
+    .detail-status.active { background:rgba(34,197,94,.15); color:var(--success); }
+    .detail-status.paused { background:rgba(251,191,36,.15); color:var(--warn); }
+
+    .link-row { display:flex; align-items:center; gap:8px; background:var(--surf2); border:1px solid var(--brd); border-radius:var(--rad); padding:9px 12px; margin-bottom:8px; }
+    .link-row-text { flex:1; font-size:12px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:monospace; }
+    .copy-btn { padding:4px 10px; background:transparent; border:1px solid var(--brd-s); color:var(--muted); border-radius:var(--rad); font-size:11px; cursor:pointer; white-space:nowrap; flex-shrink:0; transition:all .12s; }
+    .copy-btn:hover { border-color:var(--accent); color:var(--accent); }
+
+    /* МЕНЕДЖЕРЫ */
+    .mgr-item { display:flex; align-items:center; gap:10px; padding:8px 12px; background:var(--surf2); border-radius:var(--rad); margin-bottom:6px; }
+    .mgr-avatar { width:28px; height:28px; border-radius:50%; background:rgba(79,111,255,.2); color:var(--accent); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:600; flex-shrink:0; }
+    .mgr-name { flex:1; font-size:13px; }
+    .mgr-link-btn { padding:4px 10px; background:transparent; border:1px solid var(--brd-s); color:var(--muted); border-radius:var(--rad); font-size:11px; cursor:pointer; transition:all .12s; }
+    .mgr-link-btn:hover { border-color:var(--accent); color:var(--accent); }
+    .mgr-del { background:none; border:none; color:var(--muted); font-size:16px; cursor:pointer; padding:0 4px; transition:color .12s; flex-shrink:0; }
+    .mgr-del:hover { color:var(--err); }
+    .no-managers { font-size:13px; color:var(--muted); padding:12px 0; }
+
+    .add-manager-row { display:flex; gap:8px; margin-top:8px; }
+    .add-manager-row input { flex:1; background:var(--surf2); border:1px solid var(--brd); border-radius:var(--rad); color:var(--text); font-size:13px; padding:8px 12px; outline:none; font-family:inherit; }
+    .add-manager-row input:focus { border-color:var(--accent); }
+    .btn-add-mgr { padding:8px 14px; background:var(--accent); color:#fff; border:none; border-radius:var(--rad); font-size:13px; cursor:pointer; font-family:inherit; white-space:nowrap; }
+
+    /* ТОСТ */
+    .toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(20px); background:var(--surf); border:1px solid var(--brd-s); border-radius:var(--rad); padding:10px 20px; font-size:13px; font-weight:500; color:var(--text); opacity:0; transition:all .2s; z-index:200; pointer-events:none; white-space:nowrap; }
+    .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+  </style>
+</head>
+<body>
+
+<!-- ТОПБАР -->
+<div class="topbar">
+  <div class="t-logo">⚙️</div>
+  <div>
+    <div class="t-title">Кабинет администратора</div>
+    <div class="t-sub">CallCRM</div>
+  </div>
+  <button class="btn-new" onclick="openModal('modal-create')">+ Создать проект</button>
+</div>
+
+<!-- КОНТЕНТ -->
+<div class="content">
+  <div class="section-label">Ваши проекты</div>
+  <div class="projects-list" id="projects-list">
+    <div class="empty">
+      <div class="empty-icon">⏳</div>
+      <div class="empty-title">Загрузка...</div>
+    </div>
+  </div>
+</div>
+
+<!-- МОДАЛКА: СОЗДАТЬ ПРОЕКТ -->
+<div class="modal-bg" id="modal-create">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modal-create')">✕</button>
+    <div class="modal-title">Создать проект</div>
+    <div class="modal-sub">Заполните данные — система сгенерирует все ссылки автоматически</div>
+
+    <div id="form-error"></div>
+
+    <div class="field">
+      <label>Название проекта *</label>
+      <input type="text" id="new-proj-name" placeholder="Экспoдиал Лешоу 2025">
+    </div>
+    <div class="field">
+      <label>Ссылка на Google Таблицу</label>
+      <input type="text" id="new-proj-sheets" placeholder="https://docs.google.com/spreadsheets/d/...">
+      <div class="field-hint">Необязательно — можно добавить позже</div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeModal('modal-create')">Отмена</button>
+      <button class="btn-primary" id="btn-create" onclick="createProject()">Создать проект</button>
+    </div>
+  </div>
+</div>
+
+<!-- МОДАЛКА: ДЕТАЛИ ПРОЕКТА -->
+<div class="modal-bg" id="modal-detail">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modal-detail')">✕</button>
+
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
+      <div>
+        <div class="modal-title" id="detail-name">Проект</div>
+        <div style="margin-top:4px">
+          <span class="detail-status" id="detail-status">Активен</span>
+          <span style="font-size:11px;color:var(--muted);margin-left:8px">ID: <span id="detail-proj-id" style="font-family:monospace"></span></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ССЫЛКИ -->
+    <div class="detail-section">
+      <div class="detail-label">Ссылки проекта</div>
+
+      <div class="link-row">
+        <div style="font-size:13px;color:var(--text);flex-shrink:0;margin-right:4px">👤</div>
+        <div class="link-row-text" id="link-manager"></div>
+        <button class="copy-btn" onclick="copyText(document.getElementById('link-manager').textContent)">Копировать</button>
+      </div>
+
+      <div class="link-row">
+        <div style="font-size:13px;color:var(--text);flex-shrink:0;margin-right:4px">👁</div>
+        <div class="link-row-text" id="link-report"></div>
+        <button class="copy-btn" onclick="copyText(document.getElementById('link-report').textContent)">Копировать</button>
+      </div>
+
+      <div class="link-row">
+        <div style="font-size:13px;color:var(--text);flex-shrink:0;margin-right:4px">📊</div>
+        <div class="link-row-text" id="link-sheets"></div>
+        <button class="copy-btn" onclick="openLink(document.getElementById('link-sheets').textContent)">Открыть</button>
+      </div>
+    </div>
+
+    <!-- МЕНЕДЖЕРЫ -->
+    <div class="detail-section">
+      <div class="detail-label">Менеджеры проекта</div>
+      <div id="managers-list"></div>
+      <div class="add-manager-row">
+        <input type="text" id="new-manager" placeholder="Имя менеджера" onkeydown="if(event.key==='Enter') addManager()">
+        <button class="btn-add-mgr" onclick="addManager()">+ Добавить</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ТОСТ -->
+<div class="toast" id="toast"></div>
+
+<script>
+function openModal(id)  { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+function copyText(text) {
+  if (!text || text === '—') return;
+  navigator.clipboard.writeText(text)
+    .then(() => {
+      const t = document.getElementById('toast');
+      t.textContent = 'Скопировано!';
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 2500);
+    }).catch(() => {});
+}
+
+// Закрытие модалки по клику на фон
+document.querySelectorAll('.modal-bg').forEach(bg => {
+  bg.addEventListener('click', e => { if (e.target === bg) bg.classList.remove('open'); });
+});
+</script>
+</body>
+</html>
