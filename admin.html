@@ -23,6 +23,7 @@
     const app = initializeApp(firebaseConfig);
     const db  = getFirestore(app);
     const BASE = 'https://ggklayd.github.io/callcrm';
+    const BASE_WEBHOOK = 'https://script.google.com/macros/s/AKfycbxsCQVfeAFrbipFVIlm3rx2f2z0UP8nuJ6z2DuKrUHdcoHsxZimiJP3pr34SJS7SKpb/exec';
 
     window.projects = {};
     onSnapshot(collection(db,'admin_projects'), snap => {
@@ -109,6 +110,48 @@
       await setDoc(doc(db,'admin_projects',id),{managers},{merge:true});
       document.getElementById('new-mgr').value = '';
       toast('Менеджер добавлен');
+    };
+
+    // ── Создать интерфейс в Google Sheets ───────────────────────
+    window.createInterface = async function() {
+      const id = window._dpId;
+      const p  = window.projects[id];
+      if (!p || !p.sheets_url) {
+        toast('Сначала укажите ссылку на Google Таблицу в настройках проекта');
+        return;
+      }
+
+      // Извлекаем ID таблицы из URL
+      const match = p.sheets_url.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+      if (!match) {
+        toast('Неверная ссылка на таблицу');
+        return;
+      }
+      const sheetId = match[1];
+
+      const btn = document.getElementById('btn-create-iface');
+      btn.disabled    = true;
+      btn.textContent = 'Создаю...';
+
+      try {
+        const url = BASE_WEBHOOK + '?action=createInterface&spreadsheetId=' + sheetId;
+        const resp = await fetch(url);
+        const data = await resp.json();
+
+        if (data.ok) {
+          btn.textContent = '✓ Интерфейс создан';
+          btn.style.background = '#16a34a';
+          toast('Заголовки добавлены в таблицу — ' + (data.columns || '') + ' колонок');
+        } else {
+          btn.disabled    = false;
+          btn.textContent = 'Создать интерфейс';
+          toast('Ошибка: ' + (data.error || 'неизвестная'));
+        }
+      } catch (err) {
+        btn.disabled    = false;
+        btn.textContent = 'Создать интерфейс';
+        toast('Ошибка сети: ' + err.message);
+      }
     };
 
     window.removeManager = async function(pid, name) {
@@ -288,6 +331,14 @@
       <div class="detail-label">Ссылки проекта</div>
       <div class="link-row"><span class="link-icon">&#128065;</span><span class="link-text" id="dp-lr"></span><button class="copy-btn" onclick="copyText(document.getElementById('dp-lr').textContent)">Копировать</button></div>
       <div class="link-row"><span class="link-icon">&#128202;</span><span class="link-text" id="dp-ls"></span><button class="copy-btn" onclick="openLink(document.getElementById('dp-ls').textContent)">Открыть</button></div>
+    </div>
+
+    <div class="detail-section">
+      <div class="detail-label">Настройка таблицы</div>
+      <p style="font-size:13px;color:var(--sec);margin-bottom:10px;line-height:1.5">Нажмите чтобы автоматически создать все заголовки колонок в Google Таблице. Сделайте это один раз перед загрузкой базы данных.</p>
+      <button id="btn-create-iface" onclick="createInterface()" style="display:flex;align-items:center;gap:7px;padding:9px 18px;background:var(--accent);color:#fff;border:none;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .15s">
+        &#9881; Создать интерфейс
+      </button>
     </div>
 
     <div class="detail-section">
