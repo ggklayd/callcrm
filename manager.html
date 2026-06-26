@@ -28,7 +28,9 @@
     const MANAGER    = params.get('manager') || 'Менеджер';
 
     window._currentSheetRow = null;
-    window._spreadsheetId   = null; // загружается из Firestore
+    window._spreadsheetId   = null;
+    window._allClients      = [];
+    window._currentIdx      = 0;
     const WEBHOOK = 'https://script.google.com/macros/s/AKfycbxsCQVfeAFrbipFVIlm3rx2f2z0UP8nuJ6z2DuKrUHdcoHsxZimiJP3pr34SJS7SKpb/exec';
 
     document.addEventListener('DOMContentLoaded', () => {
@@ -38,60 +40,110 @@
       const ini   = parts.length >= 2 ? parts[0][0].toUpperCase() + parts[1][0].toUpperCase() : MANAGER.slice(0,2).toUpperCase();
       document.getElementById('m-av').textContent = ini;
       loadTodayCount();
-      loadProjectConfig().then(() => loadNextCard());
+      loadProjectConfig().then(() => loadAllClients());
     });
 
-    // Загружаем конфиг проекта из Firestore (sheets_url)
     async function loadProjectConfig() {
       try {
         const { getDoc, doc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
         const snap = await getDoc(doc(db, 'admin_projects', PROJECT_ID));
         if (snap.exists()) {
-          const data = snap.data();
-          if (data.sheets_url) {
-            const match = data.sheets_url.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
-            if (match) window._spreadsheetId = match[1];
+          const d = snap.data();
+          if (d.sheets_url) {
+            const m = d.sheets_url.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+            if (m) window._spreadsheetId = m[1];
           }
         }
-      } catch(e) {
-        console.warn('Не удалось загрузить конфиг проекта:', e.message);
-      }
+      } catch(e) { console.warn('Конфиг:', e.message); }
     }
 
-    async function loadTodayCount() {
-      try {
-        const start = new Date(); start.setHours(0,0,0,0);
-        const q = query(collection(db,'projects',PROJECT_ID,'clients'), where('manager','==',MANAGER), where('createdAt','>=',start));
-        const snap = await getDocs(q);
-        window._todayCount = snap.size;
-        document.getElementById('m-count').textContent = snap.size + ' сегодня';
-      } catch(e) {
-        window._todayCount = 0;
+    async function loadAllClients() {
+      if (!window._spreadsheetId) {
+        showStatus('err', 'Таблица не привязана к проекту. Обратитесь к администратору.');
+        return;
       }
-    }
-
-    window.loadNextCard = async function() {
-      showStatus('load', 'Загружаю карточку...');
+      showStatus('load', 'Загружаю список контактов...');
       try {
-        const sid  = window._spreadsheetId ? '&spreadsheetId=' + window._spreadsheetId : '';
-      const resp = await fetch(WEBHOOK + '?action=getNext&manager=' + encodeURIComponent(MANAGER) + sid);
+        const url  = WEBHOOK + '?action=getAllClients&manager=' + encodeURIComponent(MANAGER) + '&spreadsheetId=' + window._spreadsheetId;
+        const resp = await fetch(url);
         const data = await resp.json();
-        if (data.done) { showEndOfBase(); return; }
-        window._currentSheetRow = data.sheetRow;
-        setF('f-org',       data.org_name);
-        setF('f-phone',     data.phone1);
-        setF('f-mobile',    data.mobile);
-        setF('f-email',     data.email);
-        setF('f-region',    data.region);
-        setF('f-lpr-name',  data.lpr_name);
-        setF('f-lpr-phone', data.lpr_phone);
-        setF('f-lpr-email', data.lpr_email);
-        setSel('f-rubric', data.rubric);
-        setSel('f-type',   data.type_add);
+        if (!data.ok) { showStatus('err', 'Ошибка: ' + (data.error || 'неизвестная')); return; }
+        window._allClients = data.clients || [];
+        if (!window._allClients.length) { showEndOfBase(); return; }
+        const firstNew = window._allClients.findIndex(c => c.status !== 'обработан');
+        window._currentIdx = firstNew >= 0 ? firstNew : 0;
+        showCard(window._currentIdx);
         hideStatus();
       } catch(err) {
         showStatus('err', 'Ошибка загрузки: ' + err.message);
       }
+    }
+
+    function showCard(idx) {
+      const c = window._allClients[idx];
+      if (!c) return;
+      window._currentSheetRow = c.rowNum;
+      window._currentIdx      = idx;
+      setF('f-org',       c.org_name);
+      setF('f-phone',     c.phone1);
+      setF('f-mobile',    c.mobile);
+      setF('f-phone2',    c.phone2);
+      setF('f-phone3',    c.phone3);
+      setF('f-email',     c.email);
+      setF('f-site',      c.site);
+      setF('f-ai1',       c.ai1);
+      setF('f-ai2',       c.ai2);
+      setF('f-social',    c.social);
+      setF('f-rubric-txt',c.rubric);
+      setF('f-activity',  c.activity);
+      setF('f-region',    c.region);
+      setF('f-city',      c.city);
+      setF('f-address',   c.address);
+      setF('f-licenses',  c.licenses);
+      setF('f-okpd2',     c.okpd2);
+      setF('f-leasing',   c.leasing);
+      setF('f-employees', c.employees);
+      setF('f-lpr-name',  c.lpr_name);
+      setF('f-lpr-phone', c.lpr_phone);
+      setF('f-lpr-email', c.lpr_email);
+      document.querySelectorAll('.rb').forEach(b => b.className = 'rb');
+      window._selectedResult = '';
+      setF('f-note', '');
+      updateNav();
+      updateProgress();
+    }
+
+    window.goNext = function() {
+      if (window._currentIdx < window._allClients.length - 1) {
+        showCard(window._currentIdx + 1); hideStatus();
+      }
+    };
+    window.goPrev = function() {
+      if (window._currentIdx > 0) {
+        showCard(window._currentIdx - 1); hideStatus();
+      }
+    };
+
+    function updateNav() {
+      const idx   = window._currentIdx;
+      const total = window._allClients.length;
+      const prev  = document.getElementById('btn-prev-nav');
+      const next  = document.getElementById('btn-next-nav');
+      if (prev) prev.disabled = idx <= 0;
+      if (next) next.disabled = idx >= total - 1;
+    }
+
+    function updateProgress() {
+      const idx   = window._currentIdx;
+      const total = window._allClients.length;
+      const done  = window._allClients.filter(c => c.status === 'обработан').length;
+      const el    = document.getElementById('m-progress');
+      if (el) el.textContent = (idx + 1) + ' / ' + total + ' · обработано: ' + done;
+    }
+
+    window.loadNextCard = async function() {
+      const next = window._allClients.findIndex((c, i) => i > window._currentIdx && c.status !== 'обработан');
+      if (next >= 0) { showCard(next); } else { showEndOfBase(); }
     };
 
     window.saveClient = async function() {
@@ -139,7 +191,11 @@
           if (window._spreadsheetId) postBody.spreadsheetId = window._spreadsheetId;
           fetch(WEBHOOK, {method:'POST',mode:'no-cors',body:JSON.stringify({data:postBody})}).catch(()=>{});
         }
-        setTimeout(() => window.loadNextCard(), 800);
+        // Обновляем статус в локальном массиве — карточка остаётся
+        if (window._allClients[window._currentIdx]) {
+          window._allClients[window._currentIdx].status = 'обработан';
+        }
+        updateProgress();
       } catch(err) {
         showStatus('err', err.code === 'permission-denied' ? 'Нет прав записи' : 'Ошибка: ' + err.message);
       } finally {
@@ -249,8 +305,10 @@
     .btn-save{display:flex;align-items:center;gap:6px;padding:8px 20px;background:var(--accent);color:#fff;border:none;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:opacity .12s}
     .btn-save:hover{opacity:.88}
     .btn-save:disabled{opacity:.5;cursor:not-allowed}
-    .btn-clear{padding:8px 14px;background:var(--white);border:1px solid var(--border2);color:var(--sec);border-radius:7px;font-size:13px;cursor:pointer;font-family:inherit;transition:all .12s}
-    .btn-clear:hover{border-color:#9ca3af;color:var(--text)}
+    .btn-nav{padding:8px 14px;background:var(--white);border:1px solid var(--border2);color:var(--sec);border-radius:7px;font-size:13px;cursor:pointer;font-family:inherit;transition:all .12s}
+    .btn-nav:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+    .btn-nav:disabled{opacity:.4;cursor:not-allowed}
+    .progress-txt{font-size:12px;color:var(--muted);margin-left:auto;white-space:nowrap}
 
     .spin{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:sp .5s linear infinite;display:none}
     .btn-save.loading .spin{display:block}
@@ -301,25 +359,19 @@
           </div>
           <div class="field">
             <label>Рубрика</label>
-            <select id="f-rubric">
-              <option value="">—</option>
-              <option>Верхняя одежда</option><option>Нижнее бельё</option>
-              <option>Спортивная одежда</option><option>Детская одежда</option>
-              <option>Обувь</option><option>Аксессуары</option><option>Другое</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>Тип магазина</label>
-            <select id="f-type">
-              <option value="">—</option>
-              <option>магазин женской одежды</option><option>магазин мужской одежды</option>
-              <option>магазин детской одежды</option><option>мультибрендовый магазин</option>
-              <option>интернет-магазин</option><option>оптовый поставщик</option>
-            </select>
+            <input type="text" id="f-rubric-txt" placeholder="—" readonly style="background:#f9fafb">
           </div>
           <div class="field">
             <label>Регион</label>
-            <input type="text" id="f-region" placeholder="Московская обл.">
+            <input type="text" id="f-region" placeholder="—">
+          </div>
+          <div class="field">
+            <label>Населённый пункт</label>
+            <input type="text" id="f-city" placeholder="—">
+          </div>
+          <div class="field f-wide">
+            <label>Адрес</label>
+            <input type="text" id="f-address" placeholder="—">
           </div>
         </div>
 
@@ -327,7 +379,7 @@
         <div class="sect">Контакты</div>
         <div class="fields">
           <div class="field">
-            <label>Телефон <span class="req">*</span></label>
+            <label>Телефон 1 <span class="req">*</span></label>
             <input type="tel" id="f-phone" placeholder="79001234567">
           </div>
           <div class="field">
@@ -335,8 +387,57 @@
             <input type="tel" id="f-mobile" placeholder="79001234567">
           </div>
           <div class="field">
+            <label>Телефон 2</label>
+            <input type="tel" id="f-phone2" placeholder="—">
+          </div>
+          <div class="field">
+            <label>Телефон 3</label>
+            <input type="tel" id="f-phone3" placeholder="—">
+          </div>
+          <div class="field">
             <label>E-mail</label>
             <input type="email" id="f-email" placeholder="info@company.ru">
+          </div>
+          <div class="field">
+            <label>Сайт</label>
+            <input type="text" id="f-site" placeholder="—" readonly style="background:#f9fafb">
+          </div>
+          <div class="field">
+            <label>Соц.сети</label>
+            <input type="text" id="f-social" placeholder="—" readonly style="background:#f9fafb">
+          </div>
+        </div>
+
+        <!-- AI И ДЕЯТЕЛЬНОСТЬ -->
+        <div class="sect">AI / Деятельность</div>
+        <div class="fields">
+          <div class="field f-wide">
+            <label>AI-заключение</label>
+            <input type="text" id="f-ai1" placeholder="—" readonly style="background:#f9fafb">
+          </div>
+          <div class="field f-wide">
+            <label>AI-заключение 2</label>
+            <input type="text" id="f-ai2" placeholder="—" readonly style="background:#f9fafb">
+          </div>
+          <div class="field f-wide">
+            <label>Основной вид деятельности</label>
+            <input type="text" id="f-activity" placeholder="—" readonly style="background:#f9fafb">
+          </div>
+          <div class="field">
+            <label>Сотрудников</label>
+            <input type="text" id="f-employees" placeholder="—" readonly style="background:#f9fafb">
+          </div>
+          <div class="field f-wide">
+            <label>Полученные лицензии</label>
+            <input type="text" id="f-licenses" placeholder="—" readonly style="background:#f9fafb">
+          </div>
+          <div class="field f-wide">
+            <label>Предметы закупок (ОКПД2)</label>
+            <input type="text" id="f-okpd2" placeholder="—" readonly style="background:#f9fafb">
+          </div>
+          <div class="field">
+            <label>Лизингополучатель</label>
+            <input type="text" id="f-leasing" placeholder="—" readonly style="background:#f9fafb">
           </div>
         </div>
 
@@ -383,7 +484,7 @@
       </div>
     </div>
 
-    <div id="end-screen">
+        <div id="end-screen">
       <div class="end-icon">&#9989;</div>
       <div class="end-title">База закончилась</div>
       <div class="end-sub">Все номера обработаны. Администратор добавит новые строки — обновите страницу чтобы продолжить.</div>
@@ -400,12 +501,14 @@
 </div>
 
 <div class="bottom">
+  <button class="btn-nav" id="btn-prev-nav" onclick="goPrev()" disabled>&#8592; Предыдущий</button>
   <button class="btn-save" id="btn-save" onclick="saveClient()">
     <div class="spin"></div>
-    <span class="save-lbl">Сохранить</span>
+    <span class="save-lbl">Сохранить результат</span>
   </button>
-  <button class="btn-clear" onclick="clearForm()">Очистить</button>
+  <button class="btn-nav" id="btn-next-nav" onclick="goNext()">Следующий &#8594;</button>
   <div class="status" id="status"><span id="s-text"></span></div>
+  <span class="progress-txt" id="m-progress"></span>
 </div>
 
 <script>
