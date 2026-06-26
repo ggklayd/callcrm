@@ -43,8 +43,30 @@
       const cbLink = document.getElementById('cb-link');
       if (cbLink) cbLink.href = 'https://ggklayd.github.io/callcrm/callbacks.html?project=' + encodeURIComponent(PROJECT_ID) + '&manager=' + encodeURIComponent(MANAGER);
       loadProjectConfig().then(() => loadAllClients());
-      loadCallbacksList(); // загружаем перезвоны из Firestore
+      loadCallbacksList();
+      loadTodayHistory();
     });
+
+    // ── Загружаем историю звонков сегодня из Firestore ──────────
+    async function loadTodayHistory() {
+      try {
+        const today = new Date(); today.setHours(0,0,0,0);
+        const q = query(
+          collection(db, 'projects', PROJECT_ID, 'clients'),
+          where('manager', '==', MANAGER),
+          where('createdAt', '>=', today),
+          orderBy('createdAt', 'desc')
+        );
+        const snap = await getDocs(q);
+        const list = document.getElementById('log-list');
+        if (!list) return;
+        list.querySelectorAll('.sb-empty').forEach(e => e.remove());
+        snap.docs.forEach(d => {
+          const c = d.data();
+          addToLog(c);
+        });
+      } catch(e) { console.warn('loadTodayHistory:', e.message); }
+    }
 
     // ── Загружаем список перезвонов в сайдбар ────────────────────
     function loadCallbacksList() {
@@ -57,20 +79,13 @@
       );
       onSnapshot(q, (snap) => {
         window._callbacks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        renderSidebar();
+        console.log('callbacks loaded:', window._callbacks.length);
+        window.renderCallbacks();
+      }, (err) => {
+        console.error('callbacks error:', err.code, err.message);
+        const wrap = document.getElementById('cb-list');
+        if (wrap) wrap.innerHTML = '<div class="cb-empty" style="color:#dc2626">Ошибка: ' + err.code + '</div>';
       });
-    }
-
-    // ── Рендер правой колонки ─────────────────────────────────────
-    function renderSidebar() {
-      renderHistory();
-      renderCallbacks();
-    }
-
-    function renderHistory() {
-      const list = document.getElementById('log-list');
-      if (!list) return;
-      // История рендерится через addToLog — просто убеждаемся что она видима
     }
 
     window.renderCallbacks = function() {
@@ -102,13 +117,33 @@
 
     window.goToCallback = function(idx) {
       const cb = (window._callbacks || [])[idx];
-      if (!cb || !cb.sheetRow) return;
-      // Находим карточку с этим sheetRow в allClients
-      const cardIdx = (window._allClients || []).findIndex(c => c.rowNum === cb.sheetRow);
-      if (cardIdx >= 0) {
-        showCard(cardIdx);
-        hideStatus();
+      if (!cb) return;
+
+      // Если allClients уже загружен — ищем по sheetRow
+      const clients = window._allClients || [];
+      if (clients.length > 0 && cb.sheetRow) {
+        const cardIdx = clients.findIndex(c => c.rowNum === cb.sheetRow);
+        if (cardIdx >= 0) {
+          showCard(cardIdx);
+          hideStatus();
+          return;
+        }
       }
+
+      // Если не нашли — ищем по названию компании
+      if (clients.length > 0 && cb.org_name) {
+        const cardIdx = clients.findIndex(c =>
+          (c.org_name || '').toLowerCase() === (cb.org_name || '').toLowerCase()
+        );
+        if (cardIdx >= 0) {
+          showCard(cardIdx);
+          hideStatus();
+          return;
+        }
+      }
+
+      // Клиенты ещё не загружены
+      showStatus('load', 'Список контактов загружается, попробуйте снова через секунду');
     };
 
     function esc2(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
