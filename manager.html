@@ -51,20 +51,23 @@
     async function loadTodayHistory() {
       try {
         const today = new Date(); today.setHours(0,0,0,0);
+        // Простой запрос без orderBy — не требует составного индекса
         const q = query(
           collection(db, 'projects', PROJECT_ID, 'clients'),
           where('manager', '==', MANAGER),
-          where('createdAt', '>=', today),
-          orderBy('createdAt', 'desc')
+          where('createdAt', '>=', today)
         );
         const snap = await getDocs(q);
         const list = document.getElementById('log-list');
         if (!list) return;
         list.querySelectorAll('.sb-empty').forEach(e => e.remove());
-        snap.docs.forEach(d => {
-          const c = d.data();
-          addToLog(c);
+        // Сортируем на клиенте по убыванию
+        const docs = snap.docs.map(d => d.data()).sort((a, b) => {
+          const ta = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+          const tb = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+          return tb - ta;
         });
+        docs.forEach(c => addToLog(c));
       } catch(e) { console.warn('loadTodayHistory:', e.message); }
     }
 
@@ -762,11 +765,9 @@
             <textarea id="f-note" placeholder="Хочет участвовать, просит прислать ссылку на регистрацию..."></textarea>
           </div>
         </div>
-      </div>
-
-        <!-- ИСТОРИЯ КОММУНИКАЦИИ -->
+        <!-- ИСТОРИЯ КОММУНИКАЦИИ С КЛИЕНТОМ -->
         <div class="hist-block" id="hist-block">
-          <div class="hist-title">История коммуникации</div>
+          <div class="hist-title">История коммуникации с клиентом</div>
           <div id="hist-items"><div class="hist-empty">Выберите карточку чтобы увидеть историю</div></div>
         </div>
       </div>
