@@ -28,6 +28,7 @@
     const MANAGER    = params.get('manager') || 'Менеджер';
 
     window._currentSheetRow = null;
+    window._spreadsheetId   = null; // загружается из Firestore
     const WEBHOOK = 'https://script.google.com/macros/s/AKfycbxsCQVfeAFrbipFVIlm3rx2f2z0UP8nuJ6z2DuKrUHdcoHsxZimiJP3pr34SJS7SKpb/exec';
 
     document.addEventListener('DOMContentLoaded', () => {
@@ -37,8 +38,25 @@
       const ini   = parts.length >= 2 ? parts[0][0].toUpperCase() + parts[1][0].toUpperCase() : MANAGER.slice(0,2).toUpperCase();
       document.getElementById('m-av').textContent = ini;
       loadTodayCount();
-      loadNextCard();
+      loadProjectConfig().then(() => loadNextCard());
     });
+
+    // Загружаем конфиг проекта из Firestore (sheets_url)
+    async function loadProjectConfig() {
+      try {
+        const { getDoc, doc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+        const snap = await getDoc(doc(db, 'admin_projects', PROJECT_ID));
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data.sheets_url) {
+            const match = data.sheets_url.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+            if (match) window._spreadsheetId = match[1];
+          }
+        }
+      } catch(e) {
+        console.warn('Не удалось загрузить конфиг проекта:', e.message);
+      }
+    }
 
     async function loadTodayCount() {
       try {
@@ -55,7 +73,8 @@
     window.loadNextCard = async function() {
       showStatus('load', 'Загружаю карточку...');
       try {
-        const resp = await fetch(WEBHOOK + '?action=getNext&manager=' + encodeURIComponent(MANAGER));
+        const sid  = window._spreadsheetId ? '&spreadsheetId=' + window._spreadsheetId : '';
+      const resp = await fetch(WEBHOOK + '?action=getNext&manager=' + encodeURIComponent(MANAGER) + sid);
         const data = await resp.json();
         if (data.done) { showEndOfBase(); return; }
         window._currentSheetRow = data.sheetRow;
@@ -106,15 +125,19 @@
         clearFormFields();
 
         if (window._currentSheetRow) {
+          const sid2 = window._spreadsheetId ? '&spreadsheetId=' + window._spreadsheetId : '';
           const url = WEBHOOK + '?action=markDone&row=' + window._currentSheetRow
             + '&result=' + encodeURIComponent(result)
             + '&note='   + encodeURIComponent(clientData.note)
             + '&manager='+ encodeURIComponent(MANAGER)
-            + '&project='+ encodeURIComponent(PROJECT_ID);
+            + '&project='+ encodeURIComponent(PROJECT_ID)
+            + sid2;
           fetch(url, {mode:'no-cors'}).catch(()=>{});
           window._currentSheetRow = null;
         } else {
-          fetch(WEBHOOK, {method:'POST',mode:'no-cors',body:JSON.stringify({data:clientData})}).catch(()=>{});
+          const postBody = Object.assign({}, clientData);
+          if (window._spreadsheetId) postBody.spreadsheetId = window._spreadsheetId;
+          fetch(WEBHOOK, {method:'POST',mode:'no-cors',body:JSON.stringify({data:postBody})}).catch(()=>{});
         }
         setTimeout(() => window.loadNextCard(), 800);
       } catch(err) {
