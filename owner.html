@@ -3,11 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Дашборд владельца — CallCRM</title>
+  <title>Дашборд — CallCRM</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-    import { getFirestore, collection, collectionGroup, query, orderBy, onSnapshot, getDocs }
+    import { getFirestore, collection, collectionGroup, onSnapshot }
       from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
     const firebaseConfig = {
@@ -21,373 +22,253 @@
 
     const app = initializeApp(firebaseConfig);
     const db  = getFirestore(app);
-
-    const BASE_URL = 'https://ggklayd.github.io/callcrm';
+    const BASE = 'https://ggklayd.github.io/callcrm';
 
     let allProjects = {};
     let allClients  = [];
 
-    // ── Слушаем проекты ────────────────────────────────────
-    onSnapshot(collection(db, 'admin_projects'), (snap) => {
+    onSnapshot(collection(db,'admin_projects'), snap => {
       allProjects = {};
-      snap.docs.forEach(d => { allProjects[d.id] = { id: d.id, ...d.data() }; });
+      snap.docs.forEach(d => { allProjects[d.id] = {id:d.id,...d.data()}; });
       renderAll();
     });
 
-    // ── Слушаем все карточки клиентов (collectionGroup) ────
-    onSnapshot(collectionGroup(db, 'clients'), (snap) => {
-      allClients = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    onSnapshot(collectionGroup(db,'clients'), snap => {
+      allClients = snap.docs.map(d => ({id:d.id,...d.data()}));
       renderAll();
     });
 
     function renderAll() {
-      renderGlobalStats();
-      renderProjectCards();
-      renderManagerStats();
-      renderActivityFeed();
+      renderStats();
+      renderProjects();
+      renderManagers();
+      renderFeed();
       document.getElementById('loading').style.display = 'none';
       document.getElementById('main').style.display    = 'block';
     }
 
-    // ── Глобальная статистика ──────────────────────────────
-    function renderGlobalStats() {
-      const total   = allClients.length;
-      const lid     = allClients.filter(c => c.result === 'Лид').length;
-      const perz    = allClients.filter(c => c.result === 'Перезвонить').length;
-      const otkaz   = allClients.filter(c => c.result === 'Отказ').length;
-      const conv    = total > 0 ? Math.round(lid / total * 100) : 0;
-      const projCnt = Object.keys(allProjects).length;
-
-      const mgrs = new Set(allClients.map(c => c.manager).filter(Boolean));
-
-      set('g-total',   total);
-      set('g-lid',     lid);
-      set('g-conv',    conv + '%');
-      set('g-perz',    perz);
-      set('g-otkaz',   otkaz);
-      set('g-proj',    projCnt);
-      set('g-mgr',     mgrs.size);
-
-      // Сегодня
+    function renderStats() {
+      const cl    = allClients;
+      const total = cl.length;
+      const lid   = cl.filter(c=>c.result==='Лид').length;
+      const perz  = cl.filter(c=>c.result==='Перезвонить').length;
+      const otkaz = cl.filter(c=>c.result==='Отказ').length;
+      const conv  = total ? Math.round(lid/total*100) : 0;
       const today = new Date(); today.setHours(0,0,0,0);
-      const todayCount = allClients.filter(c => {
-        try { const d = c.createdAt?.toDate ? c.createdAt.toDate() : new Date(c.createdAt); return d >= today; } catch { return false; }
-      }).length;
-      set('g-today', todayCount);
+      const todayCnt = cl.filter(c=>{ try{ const d=c.createdAt?.toDate?c.createdAt.toDate():new Date(c.createdAt); return d>=today; }catch{return false;} }).length;
+      const mgrs  = new Set(cl.map(c=>c.manager).filter(Boolean)).size;
+
+      set('s-total', total); set('s-lid', lid); set('s-conv', conv+'%');
+      set('s-today', todayCnt); set('s-perz', perz); set('s-otkaz', otkaz);
+      set('s-proj', Object.keys(allProjects).length); set('s-mgr', mgrs);
     }
 
-    // ── Карточки проектов ─────────────────────────────────
-    function renderProjectCards() {
-      const wrap = document.getElementById('projects-wrap');
+    function renderProjects() {
+      const wrap  = document.getElementById('proj-wrap');
       const items = Object.values(allProjects);
-
-      if (items.length === 0) {
-        wrap.innerHTML = '<div class="empty-note">Нет проектов. Создайте первый в кабинете администратора.</div>';
-        return;
-      }
+      if (!items.length) { wrap.innerHTML='<div class="empty-note">Нет проектов</div>'; return; }
 
       wrap.innerHTML = items.map(p => {
-        const clients  = allClients.filter(c => c.project === p.id);
-        const lid      = clients.filter(c => c.result === 'Лид').length;
-        const total    = clients.length;
-        const conv     = total > 0 ? Math.round(lid / total * 100) : 0;
-        const mgrs     = new Set(clients.map(c => c.manager).filter(Boolean)).size;
-        const pct      = total > 0 ? Math.min(100, Math.round(lid / total * 100)) : 0;
+        const cl   = allClients.filter(c=>c.project===p.id);
+        const lid  = cl.filter(c=>c.result==='Лид').length;
+        const total= cl.length;
+        const conv = total ? Math.round(lid/total*100) : 0;
+        const pct  = total ? Math.min(100,Math.round(lid/total*100)) : 0;
+        const col  = strColor(p.name);
 
         return '<div class="proj-card">'
-          + '<div class="proj-card-top">'
-          +   '<div class="proj-letter" style="background:' + strColor(p.name) + '">' + (p.name||'?')[0].toUpperCase() + '</div>'
-          +   '<div class="proj-info">'
-          +     '<div class="proj-name">' + esc(p.name) + '</div>'
-          +     '<div class="proj-meta">' + mgrs + ' менеджеров · ' + total + ' контактов</div>'
-          +   '</div>'
-          +   '<span class="proj-badge ' + (p.active ? 'active' : 'paused') + '">' + (p.active ? 'Активен' : 'Пауза') + '</span>'
+          + '<div class="proj-top">'
+          +   '<div class="proj-av" style="background:'+col+'">'+(p.name||'?')[0].toUpperCase()+'</div>'
+          +   '<div class="proj-info"><div class="proj-name">'+esc(p.name)+'</div>'
+          +   '<div class="proj-meta">'+((p.managers||[]).length)+' менеджеров · '+total+' контактов</div></div>'
+          +   '<span class="badge '+(p.active?'b-green':'b-yellow')+'">'+(p.active?'Активен':'Пауза')+'</span>'
           + '</div>'
           + '<div class="proj-nums">'
-          +   '<div class="proj-num"><div class="pn-val green">' + lid + '</div><div class="pn-lbl">Лидов</div></div>'
-          +   '<div class="proj-num"><div class="pn-val blue">' + conv + '%</div><div class="pn-lbl">Конверсия</div></div>'
-          +   '<div class="proj-num"><div class="pn-val">' + total + '</div><div class="pn-lbl">Всего</div></div>'
+          +   '<div class="pn"><div class="pn-v green">'+lid+'</div><div class="pn-l">Лидов</div></div>'
+          +   '<div class="pn"><div class="pn-v blue">'+conv+'%</div><div class="pn-l">Конверсия</div></div>'
+          +   '<div class="pn"><div class="pn-v">'+total+'</div><div class="pn-l">Всего</div></div>'
           + '</div>'
-          + '<div class="proj-bar-wrap"><div class="proj-bar" style="width:' + pct + '%"></div></div>'
+          + '<div class="bar-wrap"><div class="bar" style="width:'+pct+'%"></div></div>'
           + '<div class="proj-links">'
-          +   '<a class="proj-link" href="' + BASE_URL + '/admin.html" target="_blank">Управление</a>'
-          +   '<a class="proj-link" href="' + BASE_URL + '/report.html?project=' + p.id + '" target="_blank">Отчёт</a>'
-          + '</div>'
-          + '</div>';
+          +   '<a class="plink" href="'+BASE+'/admin.html" target="_blank">Управление</a>'
+          +   '<a class="plink" href="'+BASE+'/report.html?project='+p.id+'" target="_blank">Отчёт</a>'
+          + '</div></div>';
       }).join('');
     }
 
-    // ── Статистика по менеджерам ──────────────────────────
-    function renderManagerStats() {
-      const wrap = document.getElementById('managers-wrap');
+    function renderManagers() {
+      const wrap = document.getElementById('mgr-wrap');
       const map  = {};
-
       allClients.forEach(c => {
-        const m = c.manager || 'Неизвестно';
-        if (!map[m]) map[m] = { total:0, lid:0, perz:0, otkaz:0, nedoz:0, work:0 };
+        const m = c.manager||'—';
+        if (!map[m]) map[m]={total:0,lid:0,perz:0,otkaz:0};
         map[m].total++;
-        if (c.result === 'Лид')            map[m].lid++;
-        if (c.result === 'Перезвонить')    map[m].perz++;
-        if (c.result === 'Отказ')          map[m].otkaz++;
-        if (c.result === 'Не дозвонился')  map[m].nedoz++;
-        if (c.result === 'В работе')       map[m].work++;
+        if (c.result==='Лид') map[m].lid++;
+        if (c.result==='Перезвонить') map[m].perz++;
+        if (c.result==='Отказ') map[m].otkaz++;
       });
+      const sorted = Object.entries(map).sort((a,b)=>b[1].lid-a[1].lid);
+      if (!sorted.length) { wrap.innerHTML='<div class="empty-note">Нет данных</div>'; return; }
 
-      const sorted = Object.entries(map).sort((a, b) => b[1].lid - a[1].lid);
-
-      if (sorted.length === 0) {
-        wrap.innerHTML = '<div class="empty-note">Нет данных по менеджерам</div>';
-        return;
-      }
-
-      wrap.innerHTML = '<table class="mgr-table">'
-        + '<thead><tr><th>Менеджер</th><th>Всего</th><th>Лидов</th><th>Конверсия</th><th>Перезвонить</th><th>Отказ</th></tr></thead>'
-        + '<tbody>'
-        + sorted.map(([name, s]) => {
-            const conv = s.total > 0 ? Math.round(s.lid / s.total * 100) : 0;
-            return '<tr>'
-              + '<td class="mgr-name-cell"><div class="mgr-av" style="background:' + strColor(name) + '">' + name[0].toUpperCase() + '</div>' + esc(name) + '</td>'
-              + '<td class="num">' + s.total + '</td>'
-              + '<td class="num green">' + s.lid + '</td>'
-              + '<td class="num blue">' + conv + '%</td>'
-              + '<td class="num yellow">' + s.perz + '</td>'
-              + '<td class="num red">' + s.otkaz + '</td>'
-              + '</tr>';
+      wrap.innerHTML = '<table class="tbl"><thead><tr>'
+        + '<th>Менеджер</th><th class="num">Всего</th><th class="num">Лидов</th><th class="num">Конверсия</th><th class="num">Отказ</th>'
+        + '</tr></thead><tbody>'
+        + sorted.map(([name,s]) => {
+            const conv = s.total ? Math.round(s.lid/s.total*100) : 0;
+            return '<tr><td class="mgr-cell"><div class="mgr-av" style="background:'+strColor(name)+'">'+name[0].toUpperCase()+'</div>'+esc(name)+'</td>'
+              + '<td class="num">'+s.total+'</td><td class="num green">'+s.lid+'</td>'
+              + '<td class="num blue">'+conv+'%</td><td class="num red">'+s.otkaz+'</td></tr>';
           }).join('')
         + '</tbody></table>';
     }
 
-    // ── Последние активности ──────────────────────────────
-    function renderActivityFeed() {
-      const wrap = document.getElementById('feed-wrap');
-      const sorted = [...allClients]
-        .filter(c => c.createdAt)
-        .sort((a, b) => {
-          try {
-            const da = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt);
-            const db2 = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt);
-            return db2 - da;
-          } catch { return 0; }
-        })
-        .slice(0, 15);
+    function renderFeed() {
+      const wrap   = document.getElementById('feed-wrap');
+      const sorted = [...allClients].filter(c=>c.createdAt).sort((a,b)=>{
+        try { const da=a.createdAt?.toDate?a.createdAt.toDate():new Date(a.createdAt); const db2=b.createdAt?.toDate?b.createdAt.toDate():new Date(b.createdAt); return db2-da; } catch{return 0;}
+      }).slice(0,15);
 
-      if (sorted.length === 0) {
-        wrap.innerHTML = '<div class="empty-note">Активности пока нет</div>';
-        return;
-      }
+      if (!sorted.length) { wrap.innerHTML='<div class="empty-note">Нет активности</div>'; return; }
 
-      const COLORS = {
-        'Лид':           '#22c55e',
-        'Перезвонить':   '#fbbf24',
-        'В работе':      '#4f6fff',
-        'Не дозвонился': '#fb923c',
-        'Отказ':         '#f87171',
-      };
+      const COLS = {'Лид':'#16a34a','Перезвонить':'#ca8a04','В работе':'#1d4ed8','Не дозвонился':'#c2410c','Отказ':'#dc2626'};
+      const BGS  = {'Лид':'#dcfce7','Перезвонить':'#fef9c3','В работе':'#dbeafe','Не дозвонился':'#ffedd5','Отказ':'#fee2e2'};
 
       wrap.innerHTML = sorted.map(c => {
-        const color = COLORS[c.result] || '#7b82a8';
-        let timeStr = '—';
-        try {
-          const d = c.createdAt?.toDate ? c.createdAt.toDate() : new Date(c.createdAt);
-          timeStr = d.toLocaleString('ru-RU', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
-        } catch {}
-
-        return '<div class="feed-item">'
-          + '<div class="feed-dot" style="background:' + color + '"></div>'
-          + '<div class="feed-body">'
-          +   '<span class="feed-org">' + esc(c.org_name || '—') + '</span>'
-          +   '<span class="feed-mgr"> · ' + esc(c.manager || '—') + '</span>'
-          + '</div>'
-          + '<span class="feed-badge" style="background:' + color + '22;color:' + color + '">' + esc(c.result || '—') + '</span>'
-          + '<span class="feed-time">' + timeStr + '</span>'
-          + '</div>';
+        const col = COLS[c.result]||'#6b7280';
+        const bg  = BGS[c.result]||'#f3f4f6';
+        let t='—'; try{ const d=c.createdAt?.toDate?c.createdAt.toDate():new Date(c.createdAt); t=d.toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}); }catch{}
+        return '<div class="fi"><div class="fi-dot" style="background:'+col+'"></div>'
+          + '<div class="fi-body"><span class="fi-org">'+esc(c.org_name||'—')+'</span>'
+          + '<span class="fi-mgr"> · '+esc(c.manager||'—')+'</span></div>'
+          + '<span class="fi-badge" style="background:'+bg+';color:'+col+'">'+esc(c.result||'—')+'</span>'
+          + '<span class="fi-time">'+t+'</span></div>';
       }).join('');
     }
 
-    // ── Утилиты ───────────────────────────────────────────
-    function set(id, val) {
-      const el = document.getElementById(id);
-      if (el) el.textContent = val;
-    }
-
-    function esc(s) {
-      return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    }
-
-    function strColor(str) {
-      const palette = ['#4f6fff','#22c55e','#fbbf24','#f87171','#a78bfa','#34d399','#fb923c','#60a5fa'];
-      let hash = 0;
-      for (let i = 0; i < (str||'').length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
-      return palette[Math.abs(hash) % palette.length];
-    }
+    function set(id,v){const e=document.getElementById(id);if(e)e.textContent=v;}
+    function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+    function strColor(s){const p=['#2563eb','#16a34a','#ca8a04','#dc2626','#7c3aed','#0891b2'];let h=0;for(let i=0;i<(s||'').length;i++)h=s.charCodeAt(i)+((h<<5)-h);return p[Math.abs(h)%p.length];}
   </script>
 
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    :root {
-      --bg:    #0f1117; --surf:  #1a1d27; --surf2: #222538;
-      --brd:   rgba(255,255,255,.1); --brd-s: rgba(255,255,255,.18);
-      --accent:#4f6fff; --text:  #e8eaf6; --muted: #7b82a8;
-      --success:#22c55e; --warn: #fbbf24; --err:   #f87171; --ora: #fb923c;
-      --rad: 8px;
-    }
-    body { font-family:'Inter',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100vh; }
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{--bg:#f5f6f8;--white:#fff;--border:#e5e7eb;--border2:#d1d5db;--text:#111827;--sec:#6b7280;--muted:#9ca3af;--accent:#2563eb;--rad:10px;--shadow:0 1px 3px rgba(0,0,0,.08)}
+    body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:14px}
 
-    /* ТОПБАР */
-    .topbar { display:flex; align-items:center; gap:12px; padding:11px 20px; background:var(--surf); border-bottom:1px solid var(--brd); position:sticky; top:0; z-index:10; }
-    .t-logo { width:30px; height:30px; background:var(--accent); border-radius:7px; display:flex; align-items:center; justify-content:center; font-size:15px; flex-shrink:0; }
-    .t-title { font-size:15px; font-weight:600; }
-    .t-sub   { font-size:12px; color:var(--muted); }
-    .t-links { margin-left:auto; display:flex; gap:8px; }
-    .t-link  { padding:6px 12px; border-radius:var(--rad); border:1px solid var(--brd-s); color:var(--muted); font-size:12px; text-decoration:none; transition:all .12s; }
-    .t-link:hover { border-color:var(--accent); color:var(--accent); }
+    .topbar{background:var(--white);border-bottom:1px solid var(--border);padding:12px 20px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:10;box-shadow:var(--shadow)}
+    .t-logo{width:30px;height:30px;background:var(--accent);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff;flex-shrink:0}
+    .t-title{font-size:15px;font-weight:600}
+    .t-sub{font-size:12px;color:var(--muted);margin-top:1px}
+    .t-links{margin-left:auto;display:flex;gap:8px}
+    .t-link{padding:6px 12px;border-radius:7px;border:1px solid var(--border2);color:var(--sec);font-size:12px;text-decoration:none;transition:all .12s}
+    .t-link:hover{border-color:var(--accent);color:var(--accent)}
 
-    /* КОНТЕНТ */
-    .content { max-width:1100px; margin:0 auto; padding:20px 20px 60px; display:flex; flex-direction:column; gap:24px; }
+    .page{max-width:1060px;margin:0 auto;padding:20px 20px 60px;display:flex;flex-direction:column;gap:20px}
 
-    /* СЕКЦИЯ */
-    .section { display:flex; flex-direction:column; gap:12px; }
-    .section-head { display:flex; align-items:baseline; gap:8px; }
-    .section-title { font-size:15px; font-weight:600; color:var(--text); }
-    .section-count { font-size:12px; color:var(--muted); }
+    .sec{display:flex;flex-direction:column;gap:10px}
+    .sec-title{font-size:15px;font-weight:600}
 
-    /* ГЛОБАЛЬНЫЕ СТАТЫ */
-    .stats-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
-    @media(max-width:700px) { .stats-grid { grid-template-columns:repeat(2,1fr); } }
-    .stat { background:var(--surf); border:1px solid var(--brd); border-radius:var(--rad); padding:14px 16px; }
-    .stat-n { font-size:26px; font-weight:600; line-height:1; }
-    .stat-n.green  { color:var(--success); }
-    .stat-n.blue   { color:var(--accent); }
-    .stat-n.yellow { color:var(--warn); }
-    .stat-n.red    { color:var(--err); }
-    .stat-l { font-size:12px; color:var(--muted); margin-top:4px; }
+    .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+    .stat{background:var(--white);border:1px solid var(--border);border-radius:var(--rad);padding:14px 16px;box-shadow:var(--shadow)}
+    .stat-n{font-size:26px;font-weight:600;line-height:1}
+    .stat-n.green{color:#16a34a} .stat-n.blue{color:var(--accent)} .stat-n.yellow{color:#ca8a04} .stat-n.red{color:#dc2626}
+    .stat-l{font-size:12px;color:var(--muted);margin-top:4px}
 
-    .stats-row2 { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
-    @media(max-width:700px) { .stats-row2 { grid-template-columns:repeat(2,1fr); } }
+    .proj-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px}
+    .proj-card{background:var(--white);border:1px solid var(--border);border-radius:var(--rad);padding:16px;display:flex;flex-direction:column;gap:10px;box-shadow:var(--shadow)}
+    .proj-top{display:flex;align-items:center;gap:10px}
+    .proj-av{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;color:#fff;flex-shrink:0}
+    .proj-info{flex:1;min-width:0}
+    .proj-name{font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .proj-meta{font-size:12px;color:var(--muted);margin-top:1px}
+    .badge{font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;white-space:nowrap;flex-shrink:0}
+    .b-green{background:#dcfce7;color:#16a34a} .b-yellow{background:#fef9c3;color:#ca8a04}
+    .proj-nums{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+    .pn{text-align:center}
+    .pn-v{font-size:20px;font-weight:600} .pn-v.green{color:#16a34a} .pn-v.blue{color:var(--accent)}
+    .pn-l{font-size:11px;color:var(--muted);margin-top:1px}
+    .bar-wrap{height:4px;background:#f3f4f6;border-radius:2px;overflow:hidden}
+    .bar{height:100%;background:#16a34a;border-radius:2px;transition:width .4s}
+    .proj-links{display:flex;gap:8px}
+    .plink{flex:1;text-align:center;padding:6px;border-radius:7px;border:1px solid var(--border2);color:var(--sec);font-size:12px;text-decoration:none;transition:all .12s}
+    .plink:hover{border-color:var(--accent);color:var(--accent)}
 
-    /* ПРОЕКТЫ */
-    .projects-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:12px; }
-    .proj-card { background:var(--surf); border:1px solid var(--brd); border-radius:10px; padding:16px; display:flex; flex-direction:column; gap:12px; }
-    .proj-card-top { display:flex; align-items:center; gap:10px; }
-    .proj-letter { width:36px; height:36px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:600; color:#fff; flex-shrink:0; }
-    .proj-info { flex:1; min-width:0; }
-    .proj-name { font-size:14px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .proj-meta { font-size:12px; color:var(--muted); margin-top:1px; }
-    .proj-badge { font-size:11px; font-weight:600; padding:3px 9px; border-radius:20px; white-space:nowrap; flex-shrink:0; }
-    .proj-badge.active { background:rgba(34,197,94,.15); color:var(--success); }
-    .proj-badge.paused { background:rgba(251,191,36,.15); color:var(--warn); }
-    .proj-nums { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
-    .proj-num { text-align:center; }
-    .pn-val { font-size:20px; font-weight:600; }
-    .pn-val.green { color:var(--success); }
-    .pn-val.blue  { color:var(--accent); }
-    .pn-lbl { font-size:11px; color:var(--muted); margin-top:1px; }
-    .proj-bar-wrap { height:4px; background:var(--surf2); border-radius:2px; overflow:hidden; }
-    .proj-bar { height:100%; background:var(--success); border-radius:2px; transition:width .4s; }
-    .proj-links { display:flex; gap:8px; }
-    .proj-link { flex:1; text-align:center; padding:6px; border-radius:var(--rad); border:1px solid var(--brd-s); color:var(--muted); font-size:12px; text-decoration:none; transition:all .12s; }
-    .proj-link:hover { border-color:var(--accent); color:var(--accent); }
+    .two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    .card{background:var(--white);border:1px solid var(--border);border-radius:var(--rad);overflow:hidden;box-shadow:var(--shadow)}
 
-    /* ТАБЛИЦА МЕНЕДЖЕРОВ */
-    .mgr-table { width:100%; border-collapse:collapse; font-size:13px; }
-    .mgr-table thead tr { border-bottom:1px solid var(--brd-s); }
-    .mgr-table th { padding:9px 14px; text-align:left; font-size:11px; font-weight:500; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; background:var(--surf2); }
-    .mgr-table td { padding:10px 14px; border-bottom:1px solid var(--brd); }
-    .mgr-table tr:last-child td { border-bottom:none; }
-    .mgr-table tr:hover td { background:var(--surf2); }
-    .mgr-name-cell { display:flex; align-items:center; gap:9px; }
-    .mgr-av { width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:600; color:#fff; flex-shrink:0; }
-    .num { text-align:right; font-weight:500; }
-    .num.green  { color:var(--success); }
-    .num.blue   { color:var(--accent); }
-    .num.yellow { color:var(--warn); }
-    .num.red    { color:var(--err); }
+    .tbl{width:100%;border-collapse:collapse;font-size:13px}
+    .tbl thead tr{border-bottom:1px solid var(--border)}
+    .tbl th{padding:9px 14px;text-align:left;font-size:11px;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;background:#fafafa}
+    .tbl td{padding:10px 14px;border-bottom:1px solid var(--border)}
+    .tbl tr:last-child td{border-bottom:none}
+    .tbl tr:hover td{background:#fafafa}
+    .mgr-cell{display:flex;align-items:center;gap:9px}
+    .mgr-av{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:#fff;flex-shrink:0}
+    .num{text-align:right;font-weight:500}
+    .num.green{color:#16a34a} .num.blue{color:var(--accent)} .num.red{color:#dc2626}
 
-    .table-wrap { background:var(--surf); border:1px solid var(--brd); border-radius:var(--rad); overflow:hidden; }
+    .fi{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px}
+    .fi:last-child{border-bottom:none}
+    .fi-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+    .fi-body{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .fi-org{font-weight:500}
+    .fi-mgr{color:var(--muted);font-size:12px}
+    .fi-badge{font-size:11px;font-weight:500;padding:2px 8px;border-radius:20px;white-space:nowrap;flex-shrink:0}
+    .fi-time{font-size:11px;color:var(--muted);white-space:nowrap;flex-shrink:0}
 
-    /* ЛЕНТА АКТИВНОСТИ */
-    .feed-wrap { background:var(--surf); border:1px solid var(--brd); border-radius:var(--rad); overflow:hidden; }
-    .feed-item { display:flex; align-items:center; gap:10px; padding:10px 14px; border-bottom:1px solid var(--brd); font-size:13px; }
-    .feed-item:last-child { border-bottom:none; }
-    .feed-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
-    .feed-body { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .feed-org  { font-weight:500; color:var(--text); }
-    .feed-mgr  { color:var(--muted); font-size:12px; }
-    .feed-badge { font-size:11px; font-weight:600; padding:2px 8px; border-radius:20px; white-space:nowrap; flex-shrink:0; }
-    .feed-time { font-size:11px; color:var(--muted); white-space:nowrap; flex-shrink:0; }
-
-    .empty-note { padding:32px; text-align:center; color:var(--muted); font-size:13px; }
-
-    #loading { display:flex; align-items:center; justify-content:center; min-height:300px; font-size:14px; color:var(--muted); }
-    #main { display:none; }
+    .empty-note{padding:30px;text-align:center;color:var(--muted);font-size:13px}
+    #loading{display:flex;align-items:center;justify-content:center;min-height:300px;font-size:14px;color:var(--muted)}
+    #main{display:none}
+    @media(max-width:700px){.stats-grid{grid-template-columns:repeat(2,1fr)}.two-col{grid-template-columns:1fr}}
   </style>
 </head>
 <body>
 
 <div class="topbar">
-  <div class="t-logo">👑</div>
-  <div>
-    <div class="t-title">Дашборд владельца</div>
-    <div class="t-sub">CallCRM — все проекты</div>
-  </div>
+  <div class="t-logo">&#128081;</div>
+  <div><div class="t-title">Дашборд владельца</div><div class="t-sub">CallCRM — все проекты</div></div>
   <div class="t-links">
-    <a class="t-link" href="https://ggklayd.github.io/callcrm/admin.html" target="_blank">⚙ Администратор</a>
+    <a class="t-link" href="https://ggklayd.github.io/callcrm/admin.html" target="_blank">&#9881; Администратор</a>
   </div>
 </div>
 
-<div class="content">
+<div class="page">
   <div id="loading">Загружаю данные...</div>
-
   <div id="main">
 
-    <!-- ГЛОБАЛЬНАЯ СТАТИСТИКА -->
-    <div class="section">
-      <div class="section-head"><div class="section-title">Общая статистика</div></div>
+    <div class="sec">
+      <div class="sec-title">Общая статистика</div>
       <div class="stats-grid">
-        <div class="stat"><div class="stat-n" id="g-total">0</div><div class="stat-l">Всего контактов</div></div>
-        <div class="stat"><div class="stat-n green" id="g-lid">0</div><div class="stat-l">Лидов</div></div>
-        <div class="stat"><div class="stat-n blue" id="g-conv">0%</div><div class="stat-l">Конверсия</div></div>
-        <div class="stat"><div class="stat-n" id="g-today">0</div><div class="stat-l">Добавлено сегодня</div></div>
+        <div class="stat"><div class="stat-n" id="s-total">0</div><div class="stat-l">Всего контактов</div></div>
+        <div class="stat"><div class="stat-n green" id="s-lid">0</div><div class="stat-l">Лидов</div></div>
+        <div class="stat"><div class="stat-n blue" id="s-conv">0%</div><div class="stat-l">Конверсия</div></div>
+        <div class="stat"><div class="stat-n" id="s-today">0</div><div class="stat-l">Добавлено сегодня</div></div>
       </div>
-      <div class="stats-row2">
-        <div class="stat"><div class="stat-n yellow" id="g-perz">0</div><div class="stat-l">Перезвонить</div></div>
-        <div class="stat"><div class="stat-n red" id="g-otkaz">0</div><div class="stat-l">Отказов</div></div>
-        <div class="stat"><div class="stat-n" id="g-proj">0</div><div class="stat-l">Проектов</div></div>
-        <div class="stat"><div class="stat-n" id="g-mgr">0</div><div class="stat-l">Менеджеров</div></div>
-      </div>
-    </div>
-
-    <!-- ПРОЕКТЫ -->
-    <div class="section">
-      <div class="section-head"><div class="section-title">Проекты</div></div>
-      <div class="projects-grid" id="projects-wrap">
-        <div class="empty-note">Загрузка...</div>
+      <div class="stats-grid">
+        <div class="stat"><div class="stat-n yellow" id="s-perz">0</div><div class="stat-l">Перезвонить</div></div>
+        <div class="stat"><div class="stat-n red" id="s-otkaz">0</div><div class="stat-l">Отказов</div></div>
+        <div class="stat"><div class="stat-n" id="s-proj">0</div><div class="stat-l">Проектов</div></div>
+        <div class="stat"><div class="stat-n" id="s-mgr">0</div><div class="stat-l">Менеджеров</div></div>
       </div>
     </div>
 
-    <!-- ДВУХКОЛОНОЧНЫЙ РЯД -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+    <div class="sec">
+      <div class="sec-title">Проекты</div>
+      <div class="proj-grid" id="proj-wrap"></div>
+    </div>
 
-      <!-- МЕНЕДЖЕРЫ -->
-      <div class="section">
-        <div class="section-head"><div class="section-title">Менеджеры</div></div>
-        <div class="table-wrap" id="managers-wrap">
-          <div class="empty-note">Загрузка...</div>
-        </div>
+    <div class="two-col">
+      <div class="sec">
+        <div class="sec-title">Менеджеры</div>
+        <div class="card" id="mgr-wrap"></div>
       </div>
-
-      <!-- ЛЕНТА АКТИВНОСТИ -->
-      <div class="section">
-        <div class="section-head"><div class="section-title">Последние записи</div></div>
-        <div class="feed-wrap" id="feed-wrap">
-          <div class="empty-note">Загрузка...</div>
-        </div>
+      <div class="sec">
+        <div class="sec-title">Последние записи</div>
+        <div class="card" id="feed-wrap"></div>
       </div>
-
     </div>
 
   </div>
 </div>
-
 </body>
 </html>
