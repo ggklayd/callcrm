@@ -106,18 +106,13 @@
       hideStatus();
       const form = document.querySelector('.form-area');
       if (form) {
-        form.innerHTML = \`
-          <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:16px;padding:40px">
-            <div style="font-size:48px">✅</div>
-            <div style="font-size:18px;font-weight:600;color:var(--text)">База закончилась</div>
-            <div style="font-size:14px;color:var(--muted);text-align:center;max-width:320px;line-height:1.6">
-              Все номера обработаны. Администратор добавит новые строки в таблицу — обновите страницу чтобы продолжить.
-            </div>
-            <button onclick="location.reload()" style="padding:10px 24px;background:var(--accent);color:#fff;border:none;border-radius:var(--rad);font-size:14px;font-weight:600;cursor:pointer;margin-top:8px">
-              Обновить страницу
-            </button>
-          </div>
-        \`;
+        const html = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:16px;padding:40px">'
+          + '<div style="font-size:48px">&#x2705;</div>'
+          + '<div style="font-size:18px;font-weight:600;color:var(--text)">База закончилась</div>'
+          + '<div style="font-size:14px;color:var(--muted);text-align:center;max-width:320px;line-height:1.6">Все номера обработаны. Администратор добавит новые строки в таблицу — обновите страницу чтобы продолжить.</div>'
+          + '<button onclick="location.reload()" style="padding:10px 24px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;margin-top:8px">Обновить страницу</button>'
+          + '</div>';
+        form.innerHTML = html;
       }
     }
 
