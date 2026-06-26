@@ -520,6 +520,10 @@
 </div>
 
 <script>
+window.onerror = function(msg, src, line, col, err) {
+  console.error('GLOBAL ERROR:', msg, 'line:', line, 'col:', col);
+  if (err && err.stack) console.error('STACK:', err.stack);
+};
 window._selectedResult = '';
 const BADGE_STYLES = {
   'Недозвон':     'background:#ffedd5;color:#c2410c',
@@ -556,8 +560,14 @@ function addToLog(d) {
 
 function clearFormFields() {
   ['f-org','f-phone','f-mobile','f-email','f-region','f-city','f-address',
-   'f-lpr-name','f-lpr-phone','f-lpr-email','f-note'].forEach(id => {
-    const e = document.getElementById(id); if(e) e.value = '';
+   'f-lpr-name','f-lpr-phone','f-lpr-email','f-note',
+   'f-site','f-ai1','f-ai2','f-social','f-rubric-txt','f-activity',
+   'f-employees','f-licenses','f-okpd2','f-leasing','f-phone2','f-phone3'
+  ].forEach(id => {
+    try {
+      const e = document.getElementById(id);
+      if (e && e.value !== undefined) e.value = '';
+    } catch(ex) { console.error('clearFormFields failed on:', id, ex); }
   });
   document.querySelectorAll('.rb').forEach(b => b.className = 'rb');
   window._selectedResult = '';
