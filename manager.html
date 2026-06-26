@@ -210,14 +210,25 @@
     textarea{resize:none;height:50px;line-height:1.4}
 
     /* RESULT BUTTONS */
-    .result-row{display:flex;gap:6px;flex-wrap:wrap}
-    .rb{padding:6px 14px;border-radius:7px;border:1px solid var(--border2);background:var(--white);color:var(--sec);font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;transition:all .12s;display:flex;align-items:center;gap:5px}
+    .result-row{display:flex;gap:5px;flex-wrap:wrap}
+    .rb{padding:5px 12px;border-radius:7px;border:1px solid var(--border2);background:var(--white);color:var(--sec);font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;transition:all .12s}
     .rb:hover{border-color:#9ca3af;color:var(--text)}
-    .rb.on-lid  {background:#dcfce7;border-color:#86efac;color:#16a34a}
-    .rb.on-perz {background:#fef9c3;border-color:#fde047;color:#ca8a04}
-    .rb.on-work {background:#dbeafe;border-color:#93c5fd;color:#1d4ed8}
-    .rb.on-nedoz{background:#ffedd5;border-color:#fdba74;color:#c2410c}
-    .rb.on-otkaz{background:#fee2e2;border-color:#fca5a5;color:#dc2626}
+    /* Недозвон / технические */
+    .rb.on-nedozv  {background:#ffedd5;border-color:#fdba74;color:#c2410c}
+    .rb.on-nekomp  {background:#f3f4f6;border-color:#9ca3af;color:#374151}
+    .rb.on-neabon  {background:#f3f4f6;border-color:#9ca3af;color:#374151}
+    .rb.on-dubl    {background:#f3f4f6;border-color:#9ca3af;color:#374151}
+    /* Отказы */
+    .rb.on-otsek   {background:#fee2e2;border-color:#fca5a5;color:#dc2626}
+    .rb.on-otlpr   {background:#fce7f3;border-color:#f9a8d4;color:#be185d}
+    /* КП */
+    .rb.on-kpsek   {background:#eff6ff;border-color:#93c5fd;color:#1d4ed8}
+    .rb.on-kplpr   {background:#eef2ff;border-color:#a5b4fc;color:#4338ca}
+    /* Перезвон */
+    .rb.on-perzsek {background:#fef9c3;border-color:#fde047;color:#ca8a04}
+    .rb.on-perzlpr {background:#fefce8;border-color:#fef08a;color:#a16207}
+    /* Лид */
+    .rb.on-lid     {background:#dcfce7;border-color:#86efac;color:#16a34a}
 
     /* SIDEBAR LOG */
     .sidebar{width:180px;border-left:1px solid var(--border);background:var(--white);display:flex;flex-direction:column;flex-shrink:0}
@@ -349,11 +360,17 @@
         <!-- РЕЗУЛЬТАТ -->
         <div class="sect">Результат звонка <span class="req" style="text-transform:none;font-size:10px">*</span></div>
         <div class="result-row">
-          <button class="rb" data-val="Лид"           data-cls="on-lid"   onclick="pickResult(this)">&#10003; Лид</button>
-          <button class="rb" data-val="Перезвонить"   data-cls="on-perz"  onclick="pickResult(this)">&#8635; Перезвонить</button>
-          <button class="rb" data-val="В работе"      data-cls="on-work"  onclick="pickResult(this)">&#9679; В работе</button>
-          <button class="rb" data-val="Не дозвонился" data-cls="on-nedoz" onclick="pickResult(this)">&#10007; Не дозвонился</button>
-          <button class="rb" data-val="Отказ"         data-cls="on-otkaz" onclick="pickResult(this)">&#10005; Отказ</button>
+          <button class="rb" data-val="Недозвон"      data-cls="on-nedozv"  onclick="pickResult(this)">Недозвон</button>
+          <button class="rb" data-val="Не компания"   data-cls="on-nekomp"  onclick="pickResult(this)">Не компания</button>
+          <button class="rb" data-val="Не абонент"    data-cls="on-neabon"  onclick="pickResult(this)">Не абонент</button>
+          <button class="rb" data-val="Дубль"         data-cls="on-dubl"    onclick="pickResult(this)">Дубль</button>
+          <button class="rb" data-val="Отказ Сек"     data-cls="on-otsek"   onclick="pickResult(this)">Отказ Сек</button>
+          <button class="rb" data-val="Отказ ЛПР"     data-cls="on-otlpr"   onclick="pickResult(this)">Отказ ЛПР</button>
+          <button class="rb" data-val="КП Сек"        data-cls="on-kpsek"   onclick="pickResult(this)">КП Сек</button>
+          <button class="rb" data-val="КП ЛПР"        data-cls="on-kplpr"   onclick="pickResult(this)">КП ЛПР</button>
+          <button class="rb" data-val="Перезвон Сек"  data-cls="on-perzsek" onclick="pickResult(this)">Перезвон Сек</button>
+          <button class="rb" data-val="Перезвон ЛПР"  data-cls="on-perzlpr" onclick="pickResult(this)">Перезвон ЛПР</button>
+          <button class="rb" data-val="Лид"           data-cls="on-lid"     onclick="pickResult(this)">&#10003; Лид</button>
         </div>
 
         <!-- ПРИМЕЧАНИЕ -->
@@ -394,15 +411,21 @@
 <script>
 window._selectedResult = '';
 const BADGE_STYLES = {
-  'Лид':           'background:#dcfce7;color:#16a34a',
-  'Перезвонить':   'background:#fef9c3;color:#ca8a04',
-  'В работе':      'background:#dbeafe;color:#1d4ed8',
-  'Не дозвонился': 'background:#ffedd5;color:#c2410c',
-  'Отказ':         'background:#fee2e2;color:#dc2626',
+  'Недозвон':     'background:#ffedd5;color:#c2410c',
+  'Не компания':  'background:#f3f4f6;color:#374151',
+  'Не абонент':   'background:#f3f4f6;color:#374151',
+  'Дубль':        'background:#f3f4f6;color:#374151',
+  'Отказ Сек':    'background:#fee2e2;color:#dc2626',
+  'Отказ ЛПР':    'background:#fce7f3;color:#be185d',
+  'КП Сек':       'background:#eff6ff;color:#1d4ed8',
+  'КП ЛПР':       'background:#eef2ff;color:#4338ca',
+  'Перезвон Сек': 'background:#fef9c3;color:#ca8a04',
+  'Перезвон ЛПР': 'background:#fefce8;color:#a16207',
+  'Лид':          'background:#dcfce7;color:#16a34a',
 };
 
 function pickResult(btn) {
-  document.querySelectorAll('.rb').forEach(b => b.classList.remove('on-lid','on-perz','on-work','on-nedoz','on-otkaz'));
+  document.querySelectorAll('.rb').forEach(b => b.className = 'rb');
   btn.classList.add(btn.dataset.cls);
   window._selectedResult = btn.dataset.val;
 }
@@ -426,7 +449,7 @@ function clearFormFields() {
   });
   document.getElementById('f-rubric').value = '';
   document.getElementById('f-type').value   = '';
-  document.querySelectorAll('.rb').forEach(b => b.classList.remove('on-lid','on-perz','on-work','on-nedoz','on-otkaz'));
+  document.querySelectorAll('.rb').forEach(b => b.className = 'rb');
   window._selectedResult = '';
 }
 
