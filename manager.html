@@ -98,22 +98,39 @@
         return;
       }
 
-      const now   = new Date();
+      const now = new Date();
       wrap.innerHTML = cbs.map((cb, idx) => {
         const d       = cb.callbackAt?.toDate ? cb.callbackAt.toDate() : new Date(cb.callbackAt);
         const isPast  = d < now;
         const dateStr = d.toLocaleDateString('ru-RU', {day:'2-digit', month:'2-digit'});
         const timeStr = d.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
 
-        return '<div class="cb-item ' + (isPast ? 'cb-past' : '') + '" onclick="goToCallback(' + idx + ')">'
-          + '<div class="cb-item-org">' + esc2(cb.org_name || '—') + '</div>'
-          + '<div class="cb-item-meta">'
-          +   '<span class="cb-item-time ' + (isPast?'past':'') + '">' + dateStr + ' ' + timeStr + '</span>'
-          +   '<span class="cb-item-st">' + esc2(cb.lastResult || '') + '</span>'
+        return '<div class="cb-item ' + (isPast ? 'cb-past' : '') + '">'
+          + '<div class="cb-item-body" onclick="goToCallback(' + idx + ')" style="flex:1;cursor:pointer;min-width:0">'
+          +   '<div class="cb-item-org">' + esc2(cb.org_name || '—') + '</div>'
+          +   '<div class="cb-item-meta">'
+          +     '<span class="cb-item-time ' + (isPast?'past':'') + '">' + dateStr + ' ' + timeStr + '</span>'
+          +     '<span class="cb-item-st">' + esc2(cb.lastResult || '') + '</span>'
+          +   '</div>'
           + '</div>'
+          + '<button class="cb-del-btn" onclick="confirmDeleteCallback('' + cb.id + '','' + esc2(cb.org_name||'') + '')" title="Удалить перезвон">&#10005;</button>'
           + '</div>';
       }).join('');
     };
+
+    // ── Удаление перезвона с подтверждением ───────────────────────
+    window.confirmDeleteCallback = function(cbId, orgName) {
+      if (confirm('Удалить перезвон для «' + orgName + '»?')) {
+        deleteCallback(cbId);
+      }
+    };
+
+    async function deleteCallback(cbId) {
+      try {
+        const { deleteDoc, doc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+        await deleteDoc(doc(db, 'callbacks', cbId));
+      } catch(e) { console.error('deleteCallback:', e.message); }
+    }
 
     window.goToCallback = function(idx) {
       const cb = (window._callbacks || [])[idx];
@@ -466,10 +483,14 @@
     .sb-head-cb{border-top:1px solid var(--border);margin-top:0}
     .sb-list-cb{flex:none;max-height:220px;overflow-y:auto}
     .cb-empty{padding:12px;font-size:12px;color:var(--muted);text-align:center}
-    .cb-item{padding:8px 12px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s}
+    .cb-item{padding:8px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:4px;transition:background .1s}
     .cb-item:hover{background:#f9fafb}
     .cb-item:last-child{border-bottom:none}
     .cb-item.cb-past{border-left:2px solid #dc2626}
+    .cb-item-body{display:flex;flex-direction:column;gap:2px}
+    .cb-del-btn{background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;padding:2px 4px;border-radius:4px;flex-shrink:0;transition:all .1s;line-height:1}
+    .cb-del-btn:hover{color:#dc2626;background:#fee2e2}
+    .log-item-click:hover{background:#f9fafb;border-radius:4px}
     .cb-item-org{font-size:12px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .cb-item-meta{display:flex;align-items:center;justify-content:space-between;margin-top:2px}
     .cb-item-time{font-size:11px;color:var(--muted)}
@@ -753,11 +774,24 @@ function addToLog(d) {
   const style = BADGE_STYLES[d.result] || 'background:#f3f4f6;color:#6b7280';
   const time  = new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
   const item  = document.createElement('div');
-  item.className = 'log-item';
+  item.className = 'log-item log-item-click';
+  // Сохраняем org_name для поиска
+  item.dataset.org = d.org_name || '';
+  item.style.cursor = 'pointer';
+  item.title = 'Перейти к карточке';
   item.innerHTML = '<div class="log-org">' + esc(d.org_name) + '</div>'
     + '<div class="log-meta"><span class="log-badge" style="' + style + '">' + esc(d.result) + '</span>'
     + '<span class="log-time">' + time + '</span></div>';
+  item.onclick = function() { goToHistoryItem(this.dataset.org); };
   list.prepend(item);
+}
+
+function goToHistoryItem(orgName) {
+  if (!orgName) return;
+  const clients = window._allClients || [];
+  const idx = clients.findIndex(c => (c.org_name||'').toLowerCase() === orgName.toLowerCase());
+  if (idx >= 0) { showCard(idx); hideStatus(); }
+  else showStatus('load', 'Карточка не найдена в текущем списке');
 }
 
 function clearFormFields() {
