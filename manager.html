@@ -33,12 +33,93 @@
     const PROJECT_ID = params.get('project')  || 'demo-project';
     const MANAGER    = params.get('manager')  || 'Менеджер';
 
-    // ── Ставим имя менеджера в шапку ────────────────────────
+    // ── Текущая строка таблицы (для обновления результата) ────
+    window._currentSheetRow = null;
+
+    // ── Ставим имя менеджера в шапку и грузим первую карточку ─
     document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('m-name').textContent = MANAGER;
       document.getElementById('m-proj').textContent = PROJECT_ID;
       loadTodayCount();
+      loadNextCard();  // сразу грузим первую карточку из базы
     });
+
+    // ── Загрузка следующей карточки из Google Sheets ───────────
+    window.loadNextCard = async function() {
+      const WEBHOOK = 'https://script.google.com/macros/s/AKfycbxsCQVfeAFrbipFVIlm3rx2f2z0UP8nuJ6z2DuKrUHdcoHsxZimiJP3pr34SJS7SKpb/exec';
+      const url = WEBHOOK + '?action=getNext&manager=' + encodeURIComponent(MANAGER);
+
+      // Показываем индикатор загрузки
+      showStatus('ok', 'ti-loader', 'Загружаю следующую карточку...');
+
+      try {
+        const resp = await fetch(url);
+        const data = await resp.json();
+
+        if (data.done) {
+          // База закончилась
+          showEndOfBase();
+          return;
+        }
+
+        // Заполняем поля карточки данными из таблицы
+        window._currentSheetRow = data.sheetRow;
+        setField('f-org',       data.org_name);
+        setField('f-phone',     data.phone1);
+        setField('f-mobile',    data.mobile);
+        setField('f-email',     data.email);
+        setField('f-region',    data.region);
+        setField('f-lpr-name',  data.lpr_name);
+        setField('f-lpr-phone', data.lpr_phone);
+        setField('f-lpr-email', data.lpr_email);
+
+        // Рубрику и тип пробуем выставить в select
+        setSelect('f-rubric', data.rubric);
+        setSelect('f-type',   data.type_add);
+
+        hideStatus();
+        // Фокус на примечание — данные уже есть, менеджер сразу звонит и пишет результат
+        document.getElementById('f-note').focus();
+
+      } catch (err) {
+        showStatus('err', 'ti-alert-circle', 'Ошибка загрузки карточки: ' + err.message);
+      }
+    };
+
+    function setField(id, val) {
+      const el = document.getElementById(id);
+      if (el) el.value = val || '';
+    }
+
+    function setSelect(id, val) {
+      const el = document.getElementById(id);
+      if (!el || !val) return;
+      for (let i = 0; i < el.options.length; i++) {
+        if (el.options[i].text === val || el.options[i].value === val) {
+          el.selectedIndex = i;
+          return;
+        }
+      }
+    }
+
+    function showEndOfBase() {
+      hideStatus();
+      const form = document.querySelector('.form-area');
+      if (form) {
+        form.innerHTML = \`
+          <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:16px;padding:40px">
+            <div style="font-size:48px">✅</div>
+            <div style="font-size:18px;font-weight:600;color:var(--text)">База закончилась</div>
+            <div style="font-size:14px;color:var(--muted);text-align:center;max-width:320px;line-height:1.6">
+              Все номера обработаны. Администратор добавит новые строки в таблицу — обновите страницу чтобы продолжить.
+            </div>
+            <button onclick="location.reload()" style="padding:10px 24px;background:var(--accent);color:#fff;border:none;border-radius:var(--rad);font-size:14px;font-weight:600;cursor:pointer;margin-top:8px">
+              Обновить страницу
+            </button>
+          </div>
+        \`;
+      }
+    }
 
     // ── Счётчик: сколько карточек сегодня ───────────────────
     async function loadTodayCount() {
@@ -113,16 +194,31 @@
         showStatus('ok', 'ti-check', `"${org}" сохранён`);
         clearForm();
 
-        // ── Авто-экспорт в Google Sheets через Apps Script ──
-        // После деплоя sheets-webhook.gs вставьте ваш URL:
+        // ── Записываем результат в строку таблицы + грузим следующую ──
         const SHEETS_WEBHOOK = 'https://script.google.com/macros/s/AKfycbxsCQVfeAFrbipFVIlm3rx2f2z0UP8nuJ6z2DuKrUHdcoHsxZimiJP3pr34SJS7SKpb/exec';
-        if (!SHEETS_WEBHOOK.startsWith('ВСТАВЬТЕ')) {
+
+        if (window._currentSheetRow) {
+          // Режим обзвона: обновляем существующую строку
+          const markUrl = SHEETS_WEBHOOK
+            + '?action=markDone'
+            + '&row='     + window._currentSheetRow
+            + '&result='  + encodeURIComponent(clientData.result)
+            + '&note='    + encodeURIComponent(clientData.note)
+            + '&manager=' + encodeURIComponent(clientData.manager)
+            + '&project=' + encodeURIComponent(clientData.project);
+          fetch(markUrl, { mode: 'no-cors' }).catch(() => {});
+          window._currentSheetRow = null;
+        } else {
+          // Режим ручного ввода: добавляем новую строку
           fetch(SHEETS_WEBHOOK, {
             method: 'POST',
             mode:   'no-cors',
             body:   JSON.stringify({ data: clientData }),
           }).catch(() => {});
         }
+
+        // Через 800мс грузим следующую карточку
+        setTimeout(() => window.loadNextCard(), 800);
 
       } catch (err) {
         console.error(err);
