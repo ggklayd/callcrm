@@ -167,12 +167,11 @@
 
     .sect{font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding-bottom:5px;border-bottom:1px solid var(--border)}
 
-    .row-2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-    .row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
-    .row-4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px}
-    .col-full{grid-column:1/-1}
-    .col-2{grid-column:span 2}
-    .field{display:flex;flex-direction:column;gap:4px}
+    /* единая сетка — все поля одинаковой ширины */
+    .fields{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end}
+    .field{display:flex;flex-direction:column;gap:4px;width:200px;flex-shrink:0}
+    .field.f-wide{width:420px}    /* наименование */
+    .field.f-note{width:100%}     /* примечание — на всю ширину */
     label{font-size:12px;font-weight:500;color:var(--sec)}
     label .req{color:var(--accent)}
 
@@ -259,14 +258,13 @@
     <div id="form-inner">
       <div style="display:flex;flex-direction:column;gap:10px">
 
+        <!-- ОРГАНИЗАЦИЯ -->
         <div class="sect">Организация</div>
-        <div class="row-3">
-          <div class="field col-full" style="grid-column:1/-1">
+        <div class="fields">
+          <div class="field f-wide">
             <label>Наименование <span class="req">*</span></label>
             <input type="text" id="f-org" placeholder="ООО Красотулька" autocomplete="off">
           </div>
-        </div>
-        <div class="row-3">
           <div class="field">
             <label>Рубрика</label>
             <select id="f-rubric">
@@ -291,8 +289,9 @@
           </div>
         </div>
 
+        <!-- КОНТАКТЫ -->
         <div class="sect">Контакты</div>
-        <div class="row-4">
+        <div class="fields">
           <div class="field">
             <label>Телефон <span class="req">*</span></label>
             <input type="tel" id="f-phone" placeholder="79001234567">
@@ -301,14 +300,15 @@
             <label>Сотовый</label>
             <input type="tel" id="f-mobile" placeholder="79001234567">
           </div>
-          <div class="field col-2">
+          <div class="field">
             <label>E-mail</label>
             <input type="email" id="f-email" placeholder="info@company.ru">
           </div>
         </div>
 
+        <!-- ЛПР -->
         <div class="sect">ЛПР</div>
-        <div class="row-3">
+        <div class="fields">
           <div class="field">
             <label>Имя</label>
             <input type="text" id="f-lpr-name" placeholder="Татьяна">
@@ -323,6 +323,7 @@
           </div>
         </div>
 
+        <!-- РЕЗУЛЬТАТ -->
         <div class="sect">Результат звонка <span class="req" style="text-transform:none;font-size:10px">*</span></div>
         <div class="result-row">
           <button class="rb" data-val="Лид"           data-cls="on-lid"   onclick="pickResult(this)">&#10003; Лид</button>
@@ -332,8 +333,13 @@
           <button class="rb" data-val="Отказ"         data-cls="on-otkaz" onclick="pickResult(this)">&#10005; Отказ</button>
         </div>
 
+        <!-- ПРИМЕЧАНИЕ -->
         <div class="sect">Примечание</div>
-        <textarea id="f-note" placeholder="Хочет участвовать, просит прислать ссылку на регистрацию..."></textarea>
+        <div class="fields">
+          <div class="field f-note">
+            <textarea id="f-note" placeholder="Хочет участвовать, просит прислать ссылку на регистрацию..."></textarea>
+          </div>
+        </div>
       </div>
     </div>
 
