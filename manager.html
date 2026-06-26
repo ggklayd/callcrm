@@ -113,7 +113,7 @@
           +     '<span class="cb-item-st">' + esc2(cb.lastResult || '') + '</span>'
           +   '</div>'
           + '</div>'
-          + '<button class="cb-del-btn" onclick="confirmDeleteCallback('' + cb.id + '','' + esc2(cb.org_name||'') + '')" title="Удалить перезвон">&#10005;</button>'
+          + '<button class="cb-del-btn" data-cbid="' + cb.id + '" data-org="' + esc2(cb.org_name||'') + '" onclick="confirmDeleteCallback(this.dataset.cbid,this.dataset.org)" title="Удалить перезвон">&#10005;</button>'
           + '</div>';
       }).join('');
     };
