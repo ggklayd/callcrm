@@ -8,7 +8,7 @@
 
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-    import { getFirestore, collection, doc, setDoc, onSnapshot, serverTimestamp }
+    import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, serverTimestamp }
       from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
     const firebaseConfig = {
@@ -32,11 +32,24 @@
       renderProjects();
     });
 
+    window._search = '';
+    window.onSearch = function(v) { window._search = v.toLowerCase(); renderProjects(); };
+
     function renderProjects() {
-      const list  = document.getElementById('proj-list');
-      const items = Object.values(window.projects);
-      if (!items.length) {
+      const list   = document.getElementById('proj-list');
+      const search = window._search || '';
+      let items    = Object.values(window.projects);
+
+      if (search) {
+        items = items.filter(p => (p.name||'').toLowerCase().includes(search));
+      }
+
+      if (!items.length && !search) {
         list.innerHTML = '<div class="empty"><div class="empty-icon">&#128193;</div><div class="empty-title">Нет проектов</div><div class="empty-sub">Нажмите «Создать проект» чтобы начать</div></div>';
+        return;
+      }
+      if (!items.length && search) {
+        list.innerHTML = '<div class="empty"><div class="empty-icon">&#128269;</div><div class="empty-title">Ничего не найдено</div><div class="empty-sub">Попробуйте другой запрос</div></div>';
         return;
       }
       list.innerHTML = items.map(p => {
@@ -195,6 +208,53 @@
       const b=document.getElementById(id); if(!b) return;
       b.disabled=on; b.textContent=label;
     }
+
+    // ── Архивировать проект ──────────────────────────────────────
+    window.archiveProject = async function() {
+      const id = window._dpId;
+      const p  = window.projects[id];
+      if (!p) return;
+      window._confirmAction  = 'archive';
+      window._confirmId      = id;
+      document.getElementById('confirm-title').textContent = 'Перенести в архив?';
+      document.getElementById('confirm-text').textContent  = 'Проект «' + p.name + '» будет переведён в статус «Пауза». Все ссылки и данные сохранятся.';
+      document.getElementById('confirm-ok').textContent    = 'Перенести в архив';
+      document.getElementById('confirm-ok').className      = 'btn-primary btn-warn';
+      openModal('m-confirm');
+    };
+
+    // ── Удалить проект ───────────────────────────────────────────
+    window.deleteProject = async function() {
+      const id = window._dpId;
+      const p  = window.projects[id];
+      if (!p) return;
+      window._confirmAction = 'delete';
+      window._confirmId     = id;
+      document.getElementById('confirm-title').textContent = 'Удалить проект?';
+      document.getElementById('confirm-text').textContent  = 'Проект «' + p.name + '» будет удалён безвозвратно. Восстановить будет невозможно.';
+      document.getElementById('confirm-ok').textContent    = 'Удалить';
+      document.getElementById('confirm-ok').className      = 'btn-primary btn-danger';
+      openModal('m-confirm');
+    };
+
+    // ── Выполнить подтверждённое действие ────────────────────────
+    window.confirmDo = async function() {
+      const action = window._confirmAction;
+      const id     = window._confirmId;
+      closeModal('m-confirm');
+
+      if (action === 'archive') {
+        await setDoc(doc(db,'admin_projects',id), { active: false }, { merge: true });
+        closeModal('m-detail');
+        toast('Проект переведён в архив · ссылки работают');
+      }
+
+      if (action === 'delete') {
+        await deleteDoc(doc(db,'admin_projects',id));
+        closeModal('m-detail');
+        toast('Проект удалён');
+      }
+    };
   </script>
 
   <style>
@@ -280,6 +340,11 @@
     .add-row input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(37,99,235,.1)}
     .btn-add{padding:8px 14px;background:var(--accent);color:#fff;border:none;border-radius:7px;font-size:13px;cursor:pointer;font-family:inherit;white-space:nowrap}
 
+    .btn-warn{background:#ca8a04!important}
+    .btn-danger{background:#dc2626!important}
+    .search-wrap{display:flex;align-items:center;gap:7px;border:1px solid var(--border2);border-radius:7px;padding:6px 10px;background:var(--white)}
+    .search-wrap input{border:none;outline:none;font-size:13px;color:var(--text);width:200px;font-family:inherit;background:transparent}
+    .search-wrap input::placeholder{color:var(--muted)}
     .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--text);color:#fff;border-radius:7px;padding:10px 20px;font-size:13px;font-weight:500;opacity:0;transition:all .2s;z-index:200;pointer-events:none;white-space:nowrap}
     .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   </style>
@@ -293,7 +358,13 @@
 </div>
 
 <div class="content">
-  <div class="section-label">Ваши проекты</div>
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+    <div class="section-label" style="margin-bottom:0">Ваши проекты</div>
+    <div class="search-wrap">
+      <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--muted);flex-shrink:0"><circle cx="8.5" cy="8.5" r="5.5"/><path d="M15 15l-3-3"/></svg>
+      <input type="text" placeholder="Поиск по названию..." oninput="onSearch(this.value)">
+    </div>
+  </div>
   <div class="proj-list" id="proj-list">
     <div class="empty"><div class="empty-icon">&#8987;</div><div class="empty-title">Загрузка...</div></div>
   </div>
@@ -334,6 +405,18 @@
     </div>
 
     <div class="detail-section">
+      <div class="detail-label">Управление проектом</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button onclick="archiveProject()" style="display:flex;align-items:center;gap:6px;padding:8px 14px;background:var(--white);border:1px solid #ca8a04;color:#ca8a04;border-radius:7px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;transition:all .12s">
+          &#128193; Перенести в архив
+        </button>
+        <button onclick="deleteProject()" style="display:flex;align-items:center;gap:6px;padding:8px 14px;background:var(--white);border:1px solid #dc2626;color:#dc2626;border-radius:7px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;transition:all .12s">
+          &#128465; Удалить проект
+        </button>
+      </div>
+    </div>
+
+    <div class="detail-section">
       <div class="detail-label">Настройка таблицы</div>
       <p style="font-size:13px;color:var(--sec);margin-bottom:10px;line-height:1.5">Нажмите чтобы автоматически создать все заголовки колонок в Google Таблице. Сделайте это один раз перед загрузкой базы данных.</p>
       <button id="btn-create-iface" onclick="createInterface()" style="display:flex;align-items:center;gap:7px;padding:9px 18px;background:var(--accent);color:#fff;border:none;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .15s">
@@ -348,6 +431,18 @@
         <input type="text" id="new-mgr" placeholder="Имя менеджера" onkeydown="if(event.key==='Enter')addManager()">
         <button class="btn-add" onclick="addManager()">+ Добавить</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- МОДАЛКА ПОДТВЕРЖДЕНИЯ -->
+<div class="modal-bg" id="m-confirm">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-title" id="confirm-title">Вы уверены?</div>
+    <p id="confirm-text" style="font-size:13px;color:var(--sec);margin-top:8px;line-height:1.6"></p>
+    <div class="modal-actions" style="margin-top:20px">
+      <button class="btn-ghost" onclick="closeModal('m-confirm')">Отмена</button>
+      <button id="confirm-ok" class="btn-primary" onclick="confirmDo()">Подтвердить</button>
     </div>
   </div>
 </div>
