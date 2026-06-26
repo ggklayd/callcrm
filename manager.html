@@ -115,7 +115,7 @@
 
         // ── Авто-экспорт в Google Sheets через Apps Script ──
         // После деплоя sheets-webhook.gs вставьте ваш URL:
-        const SHEETS_WEBHOOK = 'ВСТАВЬТЕ_URL_APPS_SCRIPT';
+        const SHEETS_WEBHOOK = 'https://script.google.com/macros/s/AKfycbxsCQVfeAFrbipFVIlm3rx2f2z0UP8nuJ6z2DuKrUHdcoHsxZimiJP3pr34SJS7SKpb/exec';
         if (!SHEETS_WEBHOOK.startsWith('ВСТАВЬТЕ')) {
           fetch(SHEETS_WEBHOOK, {
             method: 'POST',
