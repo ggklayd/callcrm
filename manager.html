@@ -233,6 +233,64 @@
       setF('f-note', '');
       updateNav();
       updateProgress();
+      renderCardHistory(c);
+    }
+
+    // ── История коммуникации по текущей карточке ─────────────────
+    function renderCardHistory(c) {
+      const wrap = document.getElementById('hist-items');
+      if (!wrap) return;
+
+      // Собираем все заполненные попытки из данных карточки
+      // Apps Script возвращает attempts[] если есть, иначе собираем вручную
+      const attempts = [];
+
+      // Попытки хранятся в полях result1/note1/date1/time1... до result6
+      for (let i = 1; i <= 6; i++) {
+        const result = c['result' + i] || c['Результат ' + i] || '';
+        const note   = c['note'   + i] || c['Примечание ' + i] || '';
+        const date   = c['date'   + i] || c['Дата ' + i] || '';
+        const time   = c['time'   + i] || c['Время ' + i] || '';
+        const mgr    = c['manager'+ i] || c['Менеджер ' + i] || '';
+        if (result) attempts.push({ result, note, date, time, mgr, num: i });
+      }
+
+      // Также проверяем lastResult из первой попытки
+      if (!attempts.length && c.lastResult) {
+        attempts.push({ result: c.lastResult, note: '', date: '', time: '', mgr: '', num: 1 });
+      }
+
+      if (!attempts.length) {
+        wrap.innerHTML = '<div class="hist-empty">Звонков по этому клиенту ещё не было</div>';
+        return;
+      }
+
+      const BADGE_COLORS = {
+        'Лид':           'background:#dcfce7;color:#16a34a',
+        'Перезвон Сек':  'background:#fef9c3;color:#ca8a04',
+        'Перезвон ЛПР':  'background:#fef9c3;color:#ca8a04',
+        'КП Сек':        'background:#dbeafe;color:#1d4ed8',
+        'КП ЛПР':        'background:#dbeafe;color:#1d4ed8',
+        'Отказ Сек':     'background:#fee2e2;color:#dc2626',
+        'Отказ ЛПР':     'background:#fce7f3;color:#be185d',
+        'Недозвон':      'background:#ffedd5;color:#c2410c',
+        'Не компания':   'background:#f3f4f6;color:#374151',
+        'Не абонент':    'background:#f3f4f6;color:#374151',
+        'Дубль':         'background:#f3f4f6;color:#374151',
+      };
+
+      wrap.innerHTML = attempts.reverse().map(a => {
+        const bStyle = BADGE_COLORS[a.result] || 'background:#f3f4f6;color:#6b7280';
+        const dateStr = [a.date, a.time].filter(Boolean).join(' ') || '—';
+        return '<div class="hist-item">'
+          + '<div class="hist-row1">'
+          +   '<span class="hist-badge" style="' + bStyle + '">' + esc(a.result) + '</span>'
+          +   '<span class="hist-date">' + esc(dateStr) + '</span>'
+          + '</div>'
+          + (a.note ? '<div class="hist-note">' + esc(a.note) + '</div>' : '')
+          + (a.mgr  ? '<div class="hist-mgr">' + esc(a.mgr) + '</div>' : '')
+          + '</div>';
+      }).join('');
     }
 
     // ── Сохранить перезвон в Firestore ─────────────────────────
@@ -468,7 +526,7 @@
     .rb.on-lid     {background:#dcfce7;border-color:#86efac;color:#16a34a}
 
     /* SIDEBAR LOG */
-    .sidebar{width:200px;border-left:1px solid var(--border);background:var(--white);display:flex;flex-direction:column;flex-shrink:0;overflow:hidden}
+    .sidebar{width:260px;border-left:1px solid var(--border);background:var(--white);display:flex;flex-direction:column;flex-shrink:0;overflow:hidden}
     .sb-head{padding:9px 12px 7px;font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);flex-shrink:0;background:var(--white)}
     .sb-list{flex:1;overflow-y:auto;padding:4px 0;min-height:80px}
     .sb-list::-webkit-scrollbar{width:3px}
@@ -523,6 +581,18 @@
     .end-title{font-size:20px;font-weight:600;color:var(--text)}
     .end-sub{font-size:14px;color:var(--sec);max-width:300px;line-height:1.6}
     .btn-reload{padding:10px 24px;background:var(--accent);color:#fff;border:none;border-radius:7px;font-size:14px;font-weight:600;cursor:pointer;margin-top:6px}
+
+    /* ИСТОРИЯ КОММУНИКАЦИИ */
+    .hist-block{margin-top:10px;border-top:2px solid var(--border);padding-top:8px}
+    .hist-title{font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;padding:0 4px}
+    .hist-empty{font-size:12px;color:var(--muted);padding:8px 4px}
+    .hist-item{display:flex;flex-direction:column;gap:3px;padding:8px 10px;background:#fafafa;border:1px solid var(--border);border-radius:6px;margin-bottom:5px}
+    .hist-item:last-child{margin-bottom:0}
+    .hist-row1{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+    .hist-badge{font-size:11px;font-weight:500;padding:2px 8px;border-radius:20px;white-space:nowrap}
+    .hist-date{font-size:11px;color:var(--muted);margin-left:auto;white-space:nowrap}
+    .hist-note{font-size:12px;color:var(--sec);line-height:1.4;word-break:break-word}
+    .hist-mgr{font-size:11px;color:var(--muted)}
   </style>
 </head>
 <body>
@@ -691,6 +761,13 @@
           <div class="field f-note">
             <textarea id="f-note" placeholder="Хочет участвовать, просит прислать ссылку на регистрацию..."></textarea>
           </div>
+        </div>
+      </div>
+
+        <!-- ИСТОРИЯ КОММУНИКАЦИИ -->
+        <div class="hist-block" id="hist-block">
+          <div class="hist-title">История коммуникации</div>
+          <div id="hist-items"><div class="hist-empty">Выберите карточку чтобы увидеть историю</div></div>
         </div>
       </div>
     </div>
