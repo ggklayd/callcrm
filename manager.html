@@ -39,87 +39,132 @@
       const parts = MANAGER.split(/[\s_-]/);
       const ini   = parts.length >= 2 ? parts[0][0].toUpperCase() + parts[1][0].toUpperCase() : MANAGER.slice(0,2).toUpperCase();
       document.getElementById('m-av').textContent = ini;
-      // Ссылка на перезвоны
-      const cbLink = document.getElementById('cb-link');
-      if (cbLink) cbLink.href = 'https://ggklayd.github.io/callcrm/callbacks.html?project=' + encodeURIComponent(PROJECT_ID) + '&manager=' + encodeURIComponent(MANAGER);
       loadProjectConfig().then(() => loadAllClients());
-      loadCallbacksList();
       loadTodayHistory();
+      initStatDate();
     });
 
-    // ── Загружаем историю звонков сегодня из Firestore ──────────
-    async function loadTodayHistory() {
-      try {
-        const today = new Date(); today.setHours(0,0,0,0);
-        // Простой запрос без orderBy — не требует составного индекса
-        const q = query(
-          collection(db, 'projects', PROJECT_ID, 'clients'),
-          where('manager', '==', MANAGER),
-          where('createdAt', '>=', today)
-        );
-        const snap = await getDocs(q);
-        const list = document.getElementById('log-list');
-        if (!list) return;
-        list.querySelectorAll('.sb-empty').forEach(e => e.remove());
-        // Сортируем на клиенте по убыванию
-        const docs = snap.docs.map(d => d.data()).sort((a, b) => {
-          const ta = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
-          const tb = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
-          return tb - ta;
-        });
-        docs.forEach(c => addToLog(c));
-      } catch(e) { console.warn('loadTodayHistory:', e.message); }
-    }
+    // ── Рендер списка клиентов в сайдбар ─────────────────────────
+    function renderClientsInSidebar() {
+      const list = document.getElementById('log-list');
+      if (!list) return;
+      const clients = window._allClients || [];
+      const shown = clients.slice(0, 100); // макс 100
 
-    // ── Загружаем список перезвонов в сайдбар ────────────────────
-    function loadCallbacksList() {
-      const q = query(
-        collection(db, 'callbacks'),
-        where('project', '==', PROJECT_ID),
-        where('manager', '==', MANAGER),
-        where('done',    '==', false),
-        orderBy('callbackAt', 'asc')
-      );
-      onSnapshot(q, (snap) => {
-        window._callbacks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        console.log('callbacks loaded:', window._callbacks.length);
-        window.renderCallbacks();
-      }, (err) => {
-        console.error('callbacks error:', err.code, err.message);
-        const wrap = document.getElementById('cb-list');
-        if (wrap) wrap.innerHTML = '<div class="cb-empty" style="color:#dc2626">Ошибка: ' + err.code + '</div>';
-      });
-    }
+      // Обновляем счётчик
+      const cnt = document.getElementById('sb-clients-count');
+      if (cnt) cnt.textContent = clients.length > 100 ? '100 / ' + clients.length : clients.length;
 
-    window.renderCallbacks = function() {
-      const wrap = document.getElementById('cb-list');
-      if (!wrap) return;
-      const cbs = window._callbacks || [];
-
-      if (!cbs.length) {
-        wrap.innerHTML = '<div class="cb-empty">Нет запланированных перезвонов</div>';
+      if (!shown.length) {
+        list.innerHTML = '<div class="sb-empty">Клиентов не найдено</div>';
         return;
       }
 
-      const now = new Date();
-      wrap.innerHTML = cbs.map((cb, idx) => {
-        const d       = cb.callbackAt?.toDate ? cb.callbackAt.toDate() : new Date(cb.callbackAt);
-        const isPast  = d < now;
-        const dateStr = d.toLocaleDateString('ru-RU', {day:'2-digit', month:'2-digit'});
-        const timeStr = d.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
+      list.innerHTML = shown.map((c, idx) => {
+        // Определяем последний статус клиента из попыток
+        let lastResult = '';
+        for (let i = 6; i >= 1; i--) {
+          const r = c['result' + i] || '';
+          if (r) { lastResult = r; break; }
+        }
+        const style = BADGE_STYLES[lastResult] || '';
+        const isProc = c.status === 'обработан';
+        const isCur  = idx === window._currentIdx;
 
-        return '<div class="cb-item ' + (isPast ? 'cb-past' : '') + '">'
-          + '<div class="cb-item-body" onclick="goToCallback(' + idx + ')" style="flex:1;cursor:pointer;min-width:0">'
-          +   '<div class="cb-item-org">' + esc2(cb.org_name || '—') + '</div>'
-          +   '<div class="cb-item-meta">'
-          +     '<span class="cb-item-time ' + (isPast?'past':'') + '">' + dateStr + ' ' + timeStr + '</span>'
-          +     '<span class="cb-item-st">' + esc2(cb.lastResult || '') + '</span>'
-          +   '</div>'
+        return '<div class="log-item log-item-click' + (isProc ? ' is-processed' : '') + (isCur ? ' is-current' : '') + '" data-sidx="' + idx + '" onclick="sidebarGoTo(' + idx + ')" style="cursor:pointer" title="Перейти к карточке">'
+          + '<div class="log-org">' + esc(c.org_name || '—') + '</div>'
+          + '<div class="log-meta">'
+          + (lastResult ? '<span class="log-badge" style="' + style + '">' + esc(lastResult) + '</span>' : '<span style="font-size:10px;color:var(--muted)">не обработан</span>')
           + '</div>'
-          + '<button class="cb-del-btn" data-cbid="' + cb.id + '" data-org="' + esc2(cb.org_name||'') + '" onclick="confirmDeleteCallback(this.dataset.cbid,this.dataset.org)" title="Удалить перезвон">&#10005;</button>'
           + '</div>';
       }).join('');
+    }
+
+    window.sidebarGoTo = function(idx) {
+      showCard(idx);
+      hideStatus();
     };
+
+    // Подсвечиваем активную карточку в сайдбаре
+    function sidebarHighlight(idx) {
+      document.querySelectorAll('#log-list .log-item').forEach((el, i) => {
+        el.classList.toggle('is-current', i === idx);
+      });
+    }
+
+    // ── Инициализация даты статистики ─────────────────────────────
+    function initStatDate() {
+      const inp = document.getElementById('stat-date');
+      if (!inp) return;
+      const today = new Date();
+      const pad = n => String(n).padStart(2, '0');
+      inp.value = today.getFullYear() + '-' + pad(today.getMonth()+1) + '-' + pad(today.getDate());
+      inp.addEventListener('change', () => renderStats());
+    }
+
+    // ── Статистика по выбранной дате ──────────────────────────────
+    function renderStats() {
+      const inp = document.getElementById('stat-date');
+      const wrap = document.getElementById('stat-block');
+      if (!inp || !wrap) return;
+
+      const selectedDate = inp.value; // формат YYYY-MM-DD
+      if (!selectedDate) {
+        wrap.innerHTML = '<div class="stat-empty">Выберите дату</div>';
+        return;
+      }
+
+      // Форматируем дату в формат DD.MM.YYYY как хранится в таблице
+      const [y, m, d] = selectedDate.split('-');
+      const ddmmyyyy = d + '.' + m + '.' + y;
+
+      const clients = window._allClients || [];
+      const counts = {};
+      let total = 0;
+
+      // Проходим по всем клиентам и всем попыткам
+      clients.forEach(c => {
+        for (let i = 1; i <= 6; i++) {
+          const result = c['result' + i] || '';
+          const date   = c['date'   + i] || '';
+          if (!result || !date) continue;
+          // Проверяем что дата совпадает (поддерживаем разные форматы)
+          const dateNorm = date.trim().replace(/(\d{2})\.(\d{2})\.(\d{4}).*/, '$1.$2.$3');
+          if (dateNorm === ddmmyyyy) {
+            counts[result] = (counts[result] || 0) + 1;
+            total++;
+          }
+        }
+      });
+
+      if (!total) {
+        wrap.innerHTML = '<div class="stat-empty">Нет звонков за ' + ddmmyyyy + '</div>';
+        return;
+      }
+
+      // Порядок статусов
+      const ORDER = ['Лид','КП ЛПР','КП Сек','Перезвон ЛПР','Перезвон Сек','Отказ ЛПР','Отказ Сек','Недозвон','Дубль','Не абонент','Не компания'];
+      const rows = ORDER.filter(s => counts[s]).map(s => ({ s, n: counts[s] }));
+      // Добавляем неизвестные статусы
+      Object.keys(counts).filter(s => !ORDER.includes(s)).forEach(s => rows.push({ s, n: counts[s] }));
+
+      wrap.innerHTML = rows.map(r => {
+        const style = BADGE_STYLES[r.s] || 'background:#f3f4f6;color:#374151';
+        return '<div class="stat-row">'
+          + '<span class="stat-label">' + esc(r.s) + '</span>'
+          + '<span class="stat-badge" style="' + style + '">' + r.n + '</span>'
+          + '</div>';
+      }).join('')
+      + '<div class="stat-row stat-total">'
+      + '<span class="stat-label">Всего звонков</span>'
+      + '<span class="stat-badge stat-badge-total">' + total + '</span>'
+      + '</div>';
+    }
+
+    // Сохраняем loadTodayHistory как пустую функцию (колбэки статистики теперь по-другому)
+    async function loadTodayHistory() {
+      // Клиенты рендерятся из _allClients после loadAllClients
+    }
 
     // ── Удаление перезвона с подтверждением ───────────────────────
     window.confirmDeleteCallback = function(cbId, orgName) {
@@ -199,6 +244,8 @@
         window._currentIdx = firstNew >= 0 ? firstNew : 0;
         showCard(window._currentIdx);
         hideStatus();
+        renderClientsInSidebar();
+        renderStats();
       } catch(err) {
         showStatus('err', 'Ошибка загрузки: ' + err.message);
       }
@@ -237,6 +284,7 @@
       updateNav();
       updateProgress();
       renderCardHistory(c);
+      sidebarHighlight(idx);
     }
 
     // ── История коммуникации по текущей карточке ─────────────────
@@ -411,7 +459,6 @@
 
       try {
         await addDoc(collection(db,'projects',PROJECT_ID,'clients'), clientData);
-        addToLog(clientData);
         showStatus('ok', '"' + org + '" сохранён');
         clearFormFields();
 
@@ -433,8 +480,21 @@
         // Обновляем статус в локальном массиве — карточка остаётся
         if (window._allClients[window._currentIdx]) {
           window._allClients[window._currentIdx].status = 'обработан';
+          // Записываем результат в result1..6 чтобы он отобразился в сайдбаре/статистике
+          const c = window._allClients[window._currentIdx];
+          for (let i = 1; i <= 6; i++) {
+            if (!c['result' + i]) {
+              c['result' + i] = result;
+              c['date'   + i] = new Date().toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'});
+              c['time'   + i] = new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
+              c['manager'+ i] = MANAGER;
+              break;
+            }
+          }
         }
         updateProgress();
+        renderClientsInSidebar();
+        renderStats();
         // Если у этой строки был перезвон — помечаем его выполненным
         markCallbackDone(window._currentSheetRow);
       } catch(err) {
@@ -530,33 +590,35 @@
 
     /* SIDEBAR LOG */
     .sidebar{width:260px;border-left:1px solid var(--border);background:var(--white);display:flex;flex-direction:column;flex-shrink:0;overflow:hidden}
-    .sb-head{padding:9px 12px 7px;font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);flex-shrink:0;background:var(--white)}
+    .sb-head{padding:9px 12px 7px;font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);flex-shrink:0;background:var(--white);display:flex;align-items:center;gap:6px}
+    .sb-clients-count{font-size:10px;font-weight:500;color:var(--accent);background:#eff6ff;border:1px solid #bfdbfe;padding:1px 6px;border-radius:20px;text-transform:none;letter-spacing:0}
     .sb-list{flex:1;overflow-y:auto;padding:4px 0;min-height:80px}
     .sb-list::-webkit-scrollbar{width:3px}
     .sb-list::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
     .log-item{padding:7px 12px;border-bottom:1px solid var(--border)}
     .log-item:last-child{border-bottom:none}
+    .log-item.is-processed{opacity:.6}
+    .log-item.is-current{background:#eff6ff;border-left:2px solid var(--accent)}
     .log-org{font-size:12px;font-weight:500;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .log-meta{display:flex;align-items:center;gap:5px;margin-top:2px}
     .log-badge{font-size:10px;padding:2px 7px;border-radius:20px;font-weight:500}
     .log-time{font-size:10px;color:var(--muted);margin-left:auto}
     .sb-empty{padding:20px 12px;font-size:12px;color:var(--muted);text-align:center;line-height:1.6}
-    .sb-head-cb{border-top:1px solid var(--border);margin-top:0}
-    .sb-list-cb{flex:none;max-height:220px;overflow-y:auto}
-    .cb-empty{padding:12px;font-size:12px;color:var(--muted);text-align:center}
-    .cb-item{padding:8px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:4px;transition:background .1s}
-    .cb-item:hover{background:#f9fafb}
-    .cb-item:last-child{border-bottom:none}
-    .cb-item.cb-past{border-left:2px solid #dc2626}
-    .cb-item-body{display:flex;flex-direction:column;gap:2px}
-    .cb-del-btn{background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;padding:2px 4px;border-radius:4px;flex-shrink:0;transition:all .1s;line-height:1}
-    .cb-del-btn:hover{color:#dc2626;background:#fee2e2}
-    .log-item-click:hover{background:#f9fafb;border-radius:4px}
-    .cb-item-org{font-size:12px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .cb-item-meta{display:flex;align-items:center;justify-content:space-between;margin-top:2px}
-    .cb-item-time{font-size:11px;color:var(--muted)}
-    .cb-item-time.past{color:#dc2626;font-weight:500}
-    .cb-item-st{font-size:10px;background:#fef9c3;color:#ca8a04;padding:1px 6px;border-radius:10px;white-space:nowrap}
+    /* Статистика */
+    .sb-head-stat{border-top:1px solid var(--border);justify-content:space-between}
+    .stat-date-inp{border:1px solid var(--border2);border-radius:5px;font-size:11px;color:var(--text);padding:2px 5px;font-family:inherit;outline:none;background:var(--bg);cursor:pointer;width:96px;flex-shrink:0;letter-spacing:0;text-transform:none;font-weight:400}
+    .stat-date-inp:focus{border-color:var(--accent)}
+    .sb-stat{flex:none;max-height:220px;overflow-y:auto;padding:6px 0}
+    .sb-stat::-webkit-scrollbar{width:3px}
+    .sb-stat::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+    .stat-empty{padding:12px;font-size:12px;color:var(--muted);text-align:center}
+    .stat-row{display:flex;align-items:center;justify-content:space-between;padding:5px 12px;gap:6px}
+    .stat-row:hover{background:#f9fafb}
+    .stat-label{font-size:12px;color:var(--sec);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+    .stat-badge{font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;flex-shrink:0}
+    .stat-total{border-top:1px solid var(--border);margin-top:2px;padding-top:6px}
+    .stat-total .stat-label{font-weight:600;color:var(--text)}
+    .stat-total .stat-badge{background:#f3f4f6;color:#374151}
 
     /* BOTTOM BAR */
     .bottom{display:flex;align-items:center;gap:10px;padding:10px 18px;background:var(--white);border-top:1px solid var(--border);flex-shrink:0}
@@ -609,7 +671,6 @@
     <div class="t-sub">Карточка клиента</div>
   </div>
   <div class="t-right">
-    <a id="cb-link" href="#" style="display:flex;align-items:center;gap:5px;padding:5px 12px;border:1px solid #fde047;background:#fefce8;color:#ca8a04;border-radius:20px;font-size:12px;font-weight:500;text-decoration:none" target="_blank">&#128222; Перезвоны</a>
     <div class="t-av" id="m-av">МН</div>
     <span class="t-name" id="m-name">Менеджер</span>
     <span class="t-count" id="m-count">0 сегодня</span>
@@ -782,13 +843,16 @@
   </div>
 
   <div class="sidebar">
-    <div class="sb-head">Сохранено сегодня</div>
+    <div class="sb-head">Мои клиенты <span class="sb-clients-count" id="sb-clients-count"></span></div>
     <div class="sb-list" id="log-list">
-      <div class="sb-empty">Записей пока нет. Заполните карточку и нажмите «Сохранить».</div>
+      <div class="sb-empty">Список загружается...</div>
     </div>
-    <div class="sb-head sb-head-cb">Перезвоны</div>
-    <div class="sb-list sb-list-cb" id="cb-list">
-      <div class="cb-empty">Загрузка...</div>
+    <div class="sb-head sb-head-stat">
+      Статистика
+      <input type="date" id="stat-date" class="stat-date-inp" title="Выберите дату">
+    </div>
+    <div class="sb-stat" id="stat-block">
+      <div class="stat-empty">Загрузка...</div>
     </div>
   </div>
 </div>
@@ -844,24 +908,6 @@ function pickResult(btn) {
                + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
     }
   }
-}
-
-function addToLog(d) {
-  const list = document.getElementById('log-list');
-  list.querySelectorAll('.sb-empty').forEach(e => e.remove());
-  const style = BADGE_STYLES[d.result] || 'background:#f3f4f6;color:#6b7280';
-  const time  = new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
-  const item  = document.createElement('div');
-  item.className = 'log-item log-item-click';
-  // Сохраняем org_name для поиска
-  item.dataset.org = d.org_name || '';
-  item.style.cursor = 'pointer';
-  item.title = 'Перейти к карточке';
-  item.innerHTML = '<div class="log-org">' + esc(d.org_name) + '</div>'
-    + '<div class="log-meta"><span class="log-badge" style="' + style + '">' + esc(d.result) + '</span>'
-    + '<span class="log-time">' + time + '</span></div>';
-  item.onclick = function() { goToHistoryItem(this.dataset.org); };
-  list.prepend(item);
 }
 
 function goToHistoryItem(orgName) {
