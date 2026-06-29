@@ -99,8 +99,14 @@
       if (!inp) return;
       const today = new Date();
       const pad = n => String(n).padStart(2, '0');
-      inp.value = today.getFullYear() + '-' + pad(today.getMonth()+1) + '-' + pad(today.getDate());
-      inp.addEventListener('change', () => renderStats());
+      const todayStr = today.getFullYear() + '-' + pad(today.getMonth()+1) + '-' + pad(today.getDate());
+      const storageKey = 'crm_stat_date_' + PROJECT_ID + '_' + MANAGER;
+      const saved = localStorage.getItem(storageKey);
+      inp.value = saved || todayStr;
+      inp.addEventListener('change', () => {
+        localStorage.setItem(storageKey, inp.value);
+        renderStats();
+      });
     }
 
     // ── Статистика по выбранной дате ──────────────────────────────
