@@ -40,6 +40,7 @@
       const ini   = parts.length >= 2 ? parts[0][0].toUpperCase() + parts[1][0].toUpperCase() : MANAGER.slice(0,2).toUpperCase();
       document.getElementById('m-av').textContent = ini;
       loadProjectConfig().then(() => loadAllClients());
+      loadCallbacksList();
       loadTodayHistory();
       initStatDate();
     });
@@ -165,6 +166,52 @@
     async function loadTodayHistory() {
       // Клиенты рендерятся из _allClients после loadAllClients
     }
+
+    // ── Загружаем список перезвонов в сайдбар ────────────────────
+    function loadCallbacksList() {
+      const q = query(
+        collection(db, 'callbacks'),
+        where('project', '==', PROJECT_ID),
+        where('manager', '==', MANAGER),
+        where('done',    '==', false),
+        orderBy('callbackAt', 'asc')
+      );
+      onSnapshot(q, (snap) => {
+        window._callbacks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        window.renderCallbacks();
+      }, (err) => {
+        console.error('callbacks error:', err.code, err.message);
+        const wrap = document.getElementById('cb-list');
+        if (wrap) wrap.innerHTML = '<div class="cb-empty" style="color:#dc2626">Ошибка: ' + err.code + '</div>';
+      });
+    }
+
+    window.renderCallbacks = function() {
+      const wrap = document.getElementById('cb-list');
+      if (!wrap) return;
+      const cbs = window._callbacks || [];
+      if (!cbs.length) {
+        wrap.innerHTML = '<div class="cb-empty">Нет запланированных перезвонов</div>';
+        return;
+      }
+      const now = new Date();
+      wrap.innerHTML = cbs.map((cb, idx) => {
+        const d       = cb.callbackAt?.toDate ? cb.callbackAt.toDate() : new Date(cb.callbackAt);
+        const isPast  = d < now;
+        const dateStr = d.toLocaleDateString('ru-RU', {day:'2-digit', month:'2-digit'});
+        const timeStr = d.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
+        return '<div class="cb-item ' + (isPast ? 'cb-past' : '') + '">'
+          + '<div class="cb-item-body" onclick="goToCallback(' + idx + ')" style="flex:1;cursor:pointer;min-width:0">'
+          +   '<div class="cb-item-org">' + esc2(cb.org_name || '—') + '</div>'
+          +   '<div class="cb-item-meta">'
+          +     '<span class="cb-item-time ' + (isPast?'past':'') + '">' + dateStr + ' ' + timeStr + '</span>'
+          +     '<span class="cb-item-st">' + esc2(cb.lastResult || '') + '</span>'
+          +   '</div>'
+          + '</div>'
+          + '<button class="cb-del-btn" data-cbid="' + cb.id + '" data-org="' + esc2(cb.org_name||'') + '" onclick="confirmDeleteCallback(this.dataset.cbid,this.dataset.org)" title="Удалить перезвон">&#10005;</button>'
+          + '</div>';
+      }).join('');
+    };
 
     // ── Удаление перезвона с подтверждением ───────────────────────
     window.confirmDeleteCallback = function(cbId, orgName) {
@@ -619,6 +666,24 @@
     .stat-total{border-top:1px solid var(--border);margin-top:2px;padding-top:6px}
     .stat-total .stat-label{font-weight:600;color:var(--text)}
     .stat-total .stat-badge{background:#f3f4f6;color:#374151}
+    /* Перезвоны */
+    .sb-head-cb{border-top:1px solid var(--border);margin-top:0}
+    .sb-list-cb{flex:none;max-height:200px;overflow-y:auto}
+    .sb-list-cb::-webkit-scrollbar{width:3px}
+    .sb-list-cb::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+    .cb-empty{padding:12px;font-size:12px;color:var(--muted);text-align:center}
+    .cb-item{padding:8px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:4px;transition:background .1s}
+    .cb-item:hover{background:#f9fafb}
+    .cb-item:last-child{border-bottom:none}
+    .cb-item.cb-past{border-left:2px solid #dc2626}
+    .cb-item-body{display:flex;flex-direction:column;gap:2px}
+    .cb-del-btn{background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;padding:2px 4px;border-radius:4px;flex-shrink:0;transition:all .1s;line-height:1}
+    .cb-del-btn:hover{color:#dc2626;background:#fee2e2}
+    .cb-item-org{font-size:12px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .cb-item-meta{display:flex;align-items:center;justify-content:space-between;margin-top:2px}
+    .cb-item-time{font-size:11px;color:var(--muted)}
+    .cb-item-time.past{color:#dc2626;font-weight:500}
+    .cb-item-st{font-size:10px;background:#fef9c3;color:#ca8a04;padding:1px 6px;border-radius:10px;white-space:nowrap}
 
     /* BOTTOM BAR */
     .bottom{display:flex;align-items:center;gap:10px;padding:10px 18px;background:var(--white);border-top:1px solid var(--border);flex-shrink:0}
@@ -853,6 +918,10 @@
     </div>
     <div class="sb-stat" id="stat-block">
       <div class="stat-empty">Загрузка...</div>
+    </div>
+    <div class="sb-head sb-head-cb">Перезвоны</div>
+    <div class="sb-list sb-list-cb" id="cb-list">
+      <div class="cb-empty">Загрузка...</div>
     </div>
   </div>
 </div>
