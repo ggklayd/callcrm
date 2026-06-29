@@ -128,6 +128,15 @@
       const clients = window._allClients || [];
       const counts = {};
       let total = 0;
+      // DEBUG: показываем что реально хранится в полях date/manager первых клиентов
+      if (clients.length) {
+        const sample = clients.slice(0,3).map(c => ({
+          org: c.org_name,
+          date1: c.date1, manager1: c.manager1,
+          date2: c.date2, manager2: c.manager2,
+        }));
+        console.log('[STAT DEBUG] ddmmyyyy=', ddmmyyyy, 'MANAGER=', MANAGER, 'sample=', JSON.stringify(sample));
+      }
 
       // Проходим по всем клиентам и всем попыткам
       // Считаем только звонки текущего менеджера (совпадение по полю manager1..6)
@@ -138,8 +147,21 @@
           const manager = c['manager' + i] || '';
           if (!result || !date || !manager) continue;
           if (manager.trim() !== MANAGER.trim()) continue;
-          // Проверяем что дата совпадает (поддерживаем разные форматы)
-          const dateNorm = date.trim().replace(/(\d{2})\.(\d{2})\.(\d{4}).*/, '$1.$2.$3');
+          // Нормализуем дату: Apps Script может вернуть строку "DD.MM.YYYY",
+          // "DD.MM.YYYY HH:MM:SS", ISO-строку или объект Date
+          let dateNorm = '';
+          const dateVal = date instanceof Date ? date : (typeof date === 'string' ? date.trim() : String(date).trim());
+          if (dateVal instanceof Date || (typeof dateVal === 'string' && dateVal.match(/^\d{4}-/))) {
+            // ISO или объект Date → конвертируем в DD.MM.YYYY
+            const dt = new Date(dateVal);
+            if (!isNaN(dt)) {
+              const pad = n => String(n).padStart(2,'0');
+              dateNorm = pad(dt.getDate()) + '.' + pad(dt.getMonth()+1) + '.' + dt.getFullYear();
+            }
+          } else {
+            // Строка вида "DD.MM.YYYY" или "DD.MM.YYYY HH:MM:SS"
+            dateNorm = dateVal.replace(/(\d{2})\.(\d{2})\.(\d{4}).*/, '$1.$2.$3');
+          }
           if (dateNorm === ddmmyyyy) {
             counts[result] = (counts[result] || 0) + 1;
             total++;
