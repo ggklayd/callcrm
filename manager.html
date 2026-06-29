@@ -50,19 +50,14 @@
       const list = document.getElementById('log-list');
       if (!list) return;
       const clients = window._allClients || [];
-      const shown = clients.slice(0, 100); // макс 100
-
-      // Обновляем счётчик
+      const shown = clients.slice(0, 100);
       const cnt = document.getElementById('sb-clients-count');
       if (cnt) cnt.textContent = clients.length > 100 ? '100 / ' + clients.length : clients.length;
-
       if (!shown.length) {
         list.innerHTML = '<div class="sb-empty">Клиентов не найдено</div>';
         return;
       }
-
       list.innerHTML = shown.map((c, idx) => {
-        // Определяем последний статус клиента из попыток
         let lastResult = '';
         for (let i = 6; i >= 1; i--) {
           const r = c['result' + i] || '';
@@ -71,22 +66,17 @@
         const style = BADGE_STYLES[lastResult] || '';
         const isProc = c.status === 'обработан';
         const isCur  = idx === window._currentIdx;
-
-        return '<div class="log-item log-item-click' + (isProc ? ' is-processed' : '') + (isCur ? ' is-current' : '') + '" data-sidx="' + idx + '" onclick="sidebarGoTo(' + idx + ')" style="cursor:pointer" title="Перейти к карточке">'
+        return '<div class="log-item' + (isProc ? ' is-processed' : '') + (isCur ? ' is-current' : '') + '" onclick="sidebarGoTo(' + idx + ')" style="cursor:pointer" title="Перейти к карточке">'
           + '<div class="log-org">' + esc(c.org_name || '—') + '</div>'
           + '<div class="log-meta">'
-          + (lastResult ? '<span class="log-badge" style="' + style + '">' + esc(lastResult) + '</span>' : '<span style="font-size:10px;color:var(--muted)">не обработан</span>')
+          + (lastResult ? '<span class="log-badge" style="' + style + '">' + esc(lastResult) + '</span>' : '<span class="log-unproc">не обработан</span>')
           + '</div>'
           + '</div>';
       }).join('');
     }
 
-    window.sidebarGoTo = function(idx) {
-      showCard(idx);
-      hideStatus();
-    };
+    window.sidebarGoTo = function(idx) { showCard(idx); hideStatus(); };
 
-    // Подсвечиваем активную карточку в сайдбаре
     function sidebarHighlight(idx) {
       document.querySelectorAll('#log-list .log-item').forEach((el, i) => {
         el.classList.toggle('is-current', i === idx);
@@ -114,32 +104,13 @@
       const inp = document.getElementById('stat-date');
       const wrap = document.getElementById('stat-block');
       if (!inp || !wrap) return;
-
-      const selectedDate = inp.value; // формат YYYY-MM-DD
-      if (!selectedDate) {
-        wrap.innerHTML = '<div class="stat-empty">Выберите дату</div>';
-        return;
-      }
-
-      // Форматируем дату в формат DD.MM.YYYY как хранится в таблице
+      const selectedDate = inp.value;
+      if (!selectedDate) { wrap.innerHTML = '<div class="stat-empty">Выберите дату</div>'; return; }
       const [y, m, d] = selectedDate.split('-');
       const ddmmyyyy = d + '.' + m + '.' + y;
-
       const clients = window._allClients || [];
       const counts = {};
       let total = 0;
-      // DEBUG: показываем что реально хранится в полях date/manager первых клиентов
-      if (clients.length) {
-        const sample = clients.slice(0,3).map(c => ({
-          org: c.org_name,
-          date1: c.date1, manager1: c.manager1,
-          date2: c.date2, manager2: c.manager2,
-        }));
-        console.log('[STAT DEBUG] ddmmyyyy=', ddmmyyyy, 'MANAGER=', MANAGER, 'sample=', JSON.stringify(sample));
-      }
-
-      // Проходим по всем клиентам и всем попыткам
-      // Считаем только звонки текущего менеджера (совпадение по полю manager1..6)
       clients.forEach(c => {
         for (let i = 1; i <= 6; i++) {
           const result  = c['result'  + i] || '';
@@ -147,56 +118,32 @@
           const manager = c['manager' + i] || '';
           if (!result || !date || !manager) continue;
           if (manager.trim() !== MANAGER.trim()) continue;
-          // Нормализуем дату: Apps Script может вернуть строку "DD.MM.YYYY",
-          // "DD.MM.YYYY HH:MM:SS", ISO-строку или объект Date
           let dateNorm = '';
           const dateVal = date instanceof Date ? date : (typeof date === 'string' ? date.trim() : String(date).trim());
           if (dateVal instanceof Date || (typeof dateVal === 'string' && dateVal.match(/^\d{4}-/))) {
-            // ISO или объект Date → конвертируем в DD.MM.YYYY
             const dt = new Date(dateVal);
             if (!isNaN(dt)) {
               const pad = n => String(n).padStart(2,'0');
               dateNorm = pad(dt.getDate()) + '.' + pad(dt.getMonth()+1) + '.' + dt.getFullYear();
             }
           } else {
-            // Строка вида "DD.MM.YYYY" или "DD.MM.YYYY HH:MM:SS"
             dateNorm = dateVal.replace(/(\d{2})\.(\d{2})\.(\d{4}).*/, '$1.$2.$3');
           }
-          if (dateNorm === ddmmyyyy) {
-            counts[result] = (counts[result] || 0) + 1;
-            total++;
-          }
+          if (dateNorm === ddmmyyyy) { counts[result] = (counts[result] || 0) + 1; total++; }
         }
       });
-
-      if (!total) {
-        wrap.innerHTML = '<div class="stat-empty">Нет звонков за ' + ddmmyyyy + '</div>';
-        return;
-      }
-
-      // Порядок статусов
+      if (!total) { wrap.innerHTML = '<div class="stat-empty">Нет звонков за ' + ddmmyyyy + '</div>'; return; }
       const ORDER = ['Лид','КП ЛПР','КП Сек','Перезвон ЛПР','Перезвон Сек','Отказ ЛПР','Отказ Сек','Недозвон','Дубль','Не абонент','Не компания'];
       const rows = ORDER.filter(s => counts[s]).map(s => ({ s, n: counts[s] }));
-      // Добавляем неизвестные статусы
       Object.keys(counts).filter(s => !ORDER.includes(s)).forEach(s => rows.push({ s, n: counts[s] }));
-
       wrap.innerHTML = rows.map(r => {
         const style = BADGE_STYLES[r.s] || 'background:#f3f4f6;color:#374151';
-        return '<div class="stat-row">'
-          + '<span class="stat-label">' + esc(r.s) + '</span>'
-          + '<span class="stat-badge" style="' + style + '">' + r.n + '</span>'
-          + '</div>';
+        return '<div class="stat-row"><span class="stat-label">' + esc(r.s) + '</span><span class="stat-badge" style="' + style + '">' + r.n + '</span></div>';
       }).join('')
-      + '<div class="stat-row stat-total">'
-      + '<span class="stat-label">Всего звонков</span>'
-      + '<span class="stat-badge stat-badge-total">' + total + '</span>'
-      + '</div>';
+      + '<div class="stat-row stat-total"><span class="stat-label">Всего звонков</span><span class="stat-badge stat-badge-total">' + total + '</span></div>';
     }
 
-    // Сохраняем loadTodayHistory как пустую функцию (колбэки статистики теперь по-другому)
-    async function loadTodayHistory() {
-      // Клиенты рендерятся из _allClients после loadAllClients
-    }
+    async function loadTodayHistory() { /* клиенты рендерятся из _allClients */ }
 
     // ── Загружаем список перезвонов в сайдбар ────────────────────
     function loadCallbacksList() {
@@ -221,10 +168,7 @@
       const wrap = document.getElementById('cb-list');
       if (!wrap) return;
       const cbs = window._callbacks || [];
-      if (!cbs.length) {
-        wrap.innerHTML = '<div class="cb-empty">Нет запланированных перезвонов</div>';
-        return;
-      }
+      if (!cbs.length) { wrap.innerHTML = '<div class="cb-empty">Нет запланированных перезвонов</div>'; return; }
       const now = new Date();
       wrap.innerHTML = cbs.map((cb, idx) => {
         const d        = cb.callbackAt?.toDate ? cb.callbackAt.toDate() : new Date(cb.callbackAt);
@@ -235,12 +179,8 @@
         const isSoon15 = !isPast && diffMin <= 15 && diffMin > 5;
         const dateStr  = d.toLocaleDateString('ru-RU', {day:'2-digit', month:'2-digit'});
         const timeStr  = d.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
-
-        // Класс для левой черты карточки
-        const itemCls = isPast || isSoon5 ? 'cb-past' : (isSoon15 ? 'cb-soon15' : '');
-        // Класс для текста времени
-        const timeCls = isPast || isSoon5 ? 'past' : (isSoon15 ? 'soon15' : '');
-
+        const itemCls  = isPast || isSoon5 ? 'cb-past' : (isSoon15 ? 'cb-soon15' : '');
+        const timeCls  = isPast || isSoon5 ? 'past' : (isSoon15 ? 'soon15' : '');
         return '<div class="cb-item ' + itemCls + '">'
           + '<div class="cb-item-body" onclick="goToCallback(' + idx + ')" style="flex:1;cursor:pointer;min-width:0">'
           +   '<div class="cb-item-org">' + esc2(cb.org_name || '—') + '</div>'
@@ -254,16 +194,12 @@
       }).join('');
     };
 
-    // Перерисовываем перезвоны каждую минуту чтобы цвета обновлялись
     setInterval(function() {
       if (window._callbacks && window._callbacks.length) window.renderCallbacks();
     }, 60000);
 
-    // ── Удаление перезвона с подтверждением ───────────────────────
     window.confirmDeleteCallback = function(cbId, orgName) {
-      if (confirm('Удалить перезвон для «' + orgName + '»?')) {
-        deleteCallback(cbId);
-      }
+      if (confirm('Удалить перезвон для «' + orgName + '»?')) { deleteCallback(cbId); }
     };
 
     async function deleteCallback(cbId) {
@@ -276,31 +212,15 @@
     window.goToCallback = function(idx) {
       const cb = (window._callbacks || [])[idx];
       if (!cb) return;
-
-      // Если allClients уже загружен — ищем по sheetRow
       const clients = window._allClients || [];
       if (clients.length > 0 && cb.sheetRow) {
         const cardIdx = clients.findIndex(c => c.rowNum === cb.sheetRow);
-        if (cardIdx >= 0) {
-          showCard(cardIdx);
-          hideStatus();
-          return;
-        }
+        if (cardIdx >= 0) { showCard(cardIdx); hideStatus(); return; }
       }
-
-      // Если не нашли — ищем по названию компании
       if (clients.length > 0 && cb.org_name) {
-        const cardIdx = clients.findIndex(c =>
-          (c.org_name || '').toLowerCase() === (cb.org_name || '').toLowerCase()
-        );
-        if (cardIdx >= 0) {
-          showCard(cardIdx);
-          hideStatus();
-          return;
-        }
+        const cardIdx = clients.findIndex(c => (c.org_name || '').toLowerCase() === (cb.org_name || '').toLowerCase());
+        if (cardIdx >= 0) { showCard(cardIdx); hideStatus(); return; }
       }
-
-      // Клиенты ещё не загружены
       showStatus('load', 'Список контактов загружается, попробуйте снова через секунду');
     };
 
@@ -321,10 +241,7 @@
     }
 
     async function loadAllClients() {
-      if (!window._spreadsheetId) {
-        showStatus('err', 'Таблица не привязана к проекту. Обратитесь к администратору.');
-        return;
-      }
+      if (!window._spreadsheetId) { showStatus('err', 'Таблица не привязана к проекту. Обратитесь к администратору.'); return; }
       showStatus('load', 'Загружаю список контактов...');
       try {
         const url  = WEBHOOK + '?action=getAllClients&manager=' + encodeURIComponent(MANAGER) + '&spreadsheetId=' + window._spreadsheetId;
@@ -367,48 +284,41 @@
       setF('f-licenses',  c.licenses);
       setF('f-okpd2',     c.okpd2);
       setF('f-leasing',   c.leasing);
-      setF('f-employees', c.employees);
       setF('f-lpr-name',  c.lpr_name);
       setF('f-lpr-phone', c.lpr_phone);
       setF('f-lpr-email', c.lpr_email);
       document.querySelectorAll('.rb').forEach(b => b.className = 'rb');
       window._selectedResult = '';
       setF('f-note', '');
+      const block = document.getElementById('cb-block');
+      if (block) block.style.display = 'none';
+      const dt = document.getElementById('cb-datetime');
+      if (dt) dt.value = '';
       updateNav();
       updateProgress();
       renderCardHistory(c);
       sidebarHighlight(idx);
     }
 
-    // ── История коммуникации по текущей карточке ─────────────────
     function renderCardHistory(c) {
       const wrap = document.getElementById('hist-items');
       if (!wrap) return;
-
-      // Собираем все заполненные попытки из данных карточки
-      // Apps Script возвращает attempts[] если есть, иначе собираем вручную
       const attempts = [];
-
-      // Попытки хранятся в полях result1/note1/date1/time1... до result6
       for (let i = 1; i <= 6; i++) {
-        const result = c['result' + i] || c['Результат ' + i] || '';
-        const note   = c['note'   + i] || c['Примечание ' + i] || '';
-        const date   = c['date'   + i] || c['Дата ' + i] || '';
-        const time   = c['time'   + i] || c['Время ' + i] || '';
-        const mgr    = c['manager'+ i] || c['Менеджер ' + i] || '';
+        const result = c['result' + i] || '';
+        const note   = c['note'   + i] || '';
+        const date   = c['date'   + i] || '';
+        const time   = c['time'   + i] || '';
+        const mgr    = c['manager'+ i] || '';
         if (result) attempts.push({ result, note, date, time, mgr, num: i });
       }
-
-      // Также проверяем lastResult из первой попытки
       if (!attempts.length && c.lastResult) {
         attempts.push({ result: c.lastResult, note: '', date: '', time: '', mgr: '', num: 1 });
       }
-
       if (!attempts.length) {
         wrap.innerHTML = '<div class="hist-empty">Звонков по этому клиенту ещё не было</div>';
         return;
       }
-
       const BADGE_COLORS = {
         'Лид':           'background:#dcfce7;color:#16a34a',
         'Перезвон Сек':  'background:#fef9c3;color:#ca8a04',
@@ -422,9 +332,8 @@
         'Не абонент':    'background:#f3f4f6;color:#374151',
         'Дубль':         'background:#f3f4f6;color:#374151',
       };
-
       wrap.innerHTML = attempts.reverse().map(a => {
-        const bStyle = BADGE_COLORS[a.result] || 'background:#f3f4f6;color:#6b7280';
+        const bStyle  = BADGE_COLORS[a.result] || 'background:#f3f4f6;color:#6b7280';
         const dateStr = [a.date, a.time].filter(Boolean).join(' ') || '—';
         return '<div class="hist-item">'
           + '<div class="hist-row1">'
@@ -437,12 +346,9 @@
       }).join('');
     }
 
-    // ── Сохранить перезвон в Firestore ─────────────────────────
     window.saveCallback = async function() {
       const dt = document.getElementById('cb-datetime');
       if (!dt || !dt.value) { showStatus('err', 'Выберите дату и время перезвона'); return; }
-
-      const c = window._allClients[window._currentIdx] || {};
       const cbData = {
         project:    PROJECT_ID,
         manager:    MANAGER,
@@ -455,17 +361,13 @@
         done:       false,
         createdAt:  serverTimestamp(),
       };
-
       try {
         await addDoc(collection(db, 'callbacks'), cbData);
         document.getElementById('cb-block').style.display = 'none';
         showStatus('ok', 'Перезвон запланирован на ' + new Date(dt.value).toLocaleString('ru-RU', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}));
-      } catch(e) {
-        showStatus('err', 'Ошибка: ' + e.message);
-      }
+      } catch(e) { showStatus('err', 'Ошибка: ' + e.message); }
     };
 
-    // ── Пометить перезвон выполненным после сохранения результата ──
     async function markCallbackDone(sheetRow) {
       if (!sheetRow) return;
       try {
@@ -479,43 +381,32 @@
           where('done',     '==', false)
         );
         const snap = await getDocs(q);
-        snap.docs.forEach(async d => {
-          await updateDoc(doc(db, 'callbacks', d.id), { done: true });
-        });
+        snap.docs.forEach(async d => { await updateDoc(doc(db, 'callbacks', d.id), { done: true }); });
       } catch(e) { console.warn('markCallbackDone:', e.message); }
     }
 
     window.goNext = function() {
-      if (window._currentIdx < window._allClients.length - 1) {
-        showCard(window._currentIdx + 1); hideStatus();
-      }
+      if (window._currentIdx < window._allClients.length - 1) { showCard(window._currentIdx + 1); hideStatus(); }
     };
     window.goPrev = function() {
-      if (window._currentIdx > 0) {
-        showCard(window._currentIdx - 1); hideStatus();
-      }
+      if (window._currentIdx > 0) { showCard(window._currentIdx - 1); hideStatus(); }
     };
 
-    window.updateNav = function updateNav() {
+    window.updateNav = function() {
       const idx   = window._currentIdx;
       const total = window._allClients.length;
       const prev  = document.getElementById('btn-prev-nav');
       const next  = document.getElementById('btn-next-nav');
       if (prev) prev.disabled = idx <= 0;
       if (next) next.disabled = idx >= total - 1;
-    }
+    };
 
-    window.updateProgress = function updateProgress() {
+    window.updateProgress = function() {
       const idx   = window._currentIdx;
       const total = window._allClients.length;
       const done  = window._allClients.filter(c => c.status === 'обработан').length;
       const el    = document.getElementById('m-progress');
       if (el) el.textContent = (idx + 1) + ' / ' + total + ' · обработано: ' + done;
-    }
-
-    window.loadNextCard = async function() {
-      const next = window._allClients.findIndex((c, i) => i > window._currentIdx && c.status !== 'обработан');
-      if (next >= 0) { showCard(next); } else { showEndOfBase(); }
     };
 
     window.saveClient = async function() {
@@ -525,9 +416,7 @@
       if (!org)    { showStatus('err','Укажите организацию'); return; }
       if (!phone)  { showStatus('err','Укажите телефон'); return; }
       if (!result) { showStatus('err','Выберите результат звонка'); return; }
-
-      try { setBtnLoad(true); } catch(e) { console.error('setBtnLoad error:', e); }
-
+      try { setBtnLoad(true); } catch(e) {}
       const c = window._allClients[window._currentIdx] || {};
       const clientData = {
         org_name:  org,
@@ -549,12 +438,10 @@
         createdAt: serverTimestamp(),
         dateStr:   new Date().toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}),
       };
-
       try {
         await addDoc(collection(db,'projects',PROJECT_ID,'clients'), clientData);
         showStatus('ok', '"' + org + '" сохранён');
         clearFormFields();
-
         if (window._currentSheetRow) {
           const sid2 = window._spreadsheetId ? '&spreadsheetId=' + window._spreadsheetId : '';
           const url = WEBHOOK + '?action=markDone&row=' + window._currentSheetRow
@@ -570,17 +457,15 @@
           if (window._spreadsheetId) postBody.spreadsheetId = window._spreadsheetId;
           fetch(WEBHOOK, {method:'POST',mode:'no-cors',body:JSON.stringify({data:postBody})}).catch(()=>{});
         }
-        // Обновляем статус в локальном массиве — карточка остаётся
         if (window._allClients[window._currentIdx]) {
           window._allClients[window._currentIdx].status = 'обработан';
-          // Записываем результат в result1..6 чтобы он отобразился в сайдбаре/статистике
-          const c = window._allClients[window._currentIdx];
+          const cv = window._allClients[window._currentIdx];
           for (let i = 1; i <= 6; i++) {
-            if (!c['result' + i]) {
-              c['result' + i] = result;
-              c['date'   + i] = new Date().toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'});
-              c['time'   + i] = new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
-              c['manager'+ i] = MANAGER;
+            if (!cv['result' + i]) {
+              cv['result' + i] = result;
+              cv['date'   + i] = new Date().toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'});
+              cv['time'   + i] = new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
+              cv['manager'+ i] = MANAGER;
               break;
             }
           }
@@ -588,10 +473,8 @@
         updateProgress();
         renderClientsInSidebar();
         renderStats();
-        // Если у этой строки был перезвон — помечаем его выполненным
         markCallbackDone(window._currentSheetRow);
       } catch(err) {
-        console.error('saveClient error:', err.message, err.stack);
         showStatus('err', err.code === 'permission-denied' ? 'Нет прав записи' : 'Ошибка: ' + err.message);
       } finally {
         try { setBtnLoad(false); } catch(e) {}
@@ -605,176 +488,225 @@
     }
 
     function setF(id, val) { const e=document.getElementById(id); if(e) e.value=val||''; }
-    function setSel(id, val) {
-      const e=document.getElementById(id); if(!e||!val) return;
-      for(let i=0;i<e.options.length;i++) if(e.options[i].text===val||e.options[i].value===val){ e.selectedIndex=i; return; }
-    }
-    function gv(id) { const e=document.getElementById(id); return e?e.value:''; }
+    function gv(id)  { const e=document.getElementById(id); return e?e.value:''; }
   </script>
 
   <style>
-    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-    :root{
-      --bg:#f5f6f8; --white:#ffffff; --border:#e5e7eb; --border2:#d1d5db;
-      --text:#111827; --sec:#6b7280; --muted:#9ca3af; --accent:#2563eb;
-      --rad:10px; --shadow:0 1px 3px rgba(0,0,0,.08),0 1px 2px rgba(0,0,0,.04);
+    *,*::before,*::after { box-sizing:border-box; margin:0; padding:0 }
+    :root {
+      --bg:#f5f6f8;
+      --white:#ffffff;
+      --border:#e5e7eb;
+      --border2:#d1d5db;
+      --text:#111827;
+      --sec:#6b7280;
+      --muted:#9ca3af;
+      --accent:#2563eb;
+      --rad:8px;
     }
-    html,body{height:100%;overflow:hidden}
-    body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);display:flex;flex-direction:column;font-size:14px}
+    html,body { height:100%; overflow:hidden }
+    body { font-family:'Inter',system-ui,sans-serif; background:var(--bg); color:var(--text); display:flex; flex-direction:column; font-size:14px }
 
-    /* TOPBAR */
-    .topbar{display:flex;align-items:center;gap:10px;padding:10px 18px;background:var(--white);border-bottom:1px solid var(--border);flex-shrink:0;box-shadow:var(--shadow)}
-    .t-logo{width:28px;height:28px;background:var(--accent);border-radius:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-    .t-logo svg{width:14px;height:14px;fill:#fff}
-    .t-proj{font-size:14px;font-weight:600;color:var(--text)}
-    .t-sub{font-size:11px;color:var(--muted);margin-top:1px}
-    .t-right{margin-left:auto;display:flex;align-items:center;gap:8px}
-    .t-av{width:28px;height:28px;border-radius:50%;background:#dbeafe;color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600}
-    .t-name{font-size:13px;color:var(--sec)}
-    .t-count{font-size:11px;background:#eff6ff;color:var(--accent);border:1px solid #bfdbfe;padding:2px 8px;border-radius:20px}
+    /* ── TOPBAR ── */
+    .topbar { display:flex; align-items:center; gap:10px; padding:9px 16px; background:var(--white); border-bottom:1px solid var(--border); flex-shrink:0 }
+    .t-logo { width:28px; height:28px; background:var(--accent); border-radius:7px; display:flex; align-items:center; justify-content:center; flex-shrink:0 }
+    .t-logo svg { width:14px; height:14px; fill:#fff }
+    .t-proj { font-size:14px; font-weight:600; color:var(--text) }
+    .t-sub  { font-size:11px; color:var(--muted); margin-top:1px }
+    .t-right { margin-left:auto; display:flex; align-items:center; gap:8px }
+    .t-av   { width:28px; height:28px; border-radius:50%; background:#dbeafe; color:var(--accent); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:600 }
+    .t-name { font-size:13px; color:var(--sec) }
+    .t-count { font-size:11px; background:#eff6ff; color:var(--accent); border:1px solid #bfdbfe; padding:2px 8px; border-radius:20px }
 
-    /* BODY */
-    .body{display:flex;flex:1;min-height:0;overflow:hidden}
+    /* ── BODY ── */
+    .body { display:flex; flex:1; min-height:0; overflow:hidden }
 
-    /* FORM */
-    .form-area{flex:1;padding:14px 18px;display:flex;flex-direction:column;gap:10px;overflow:hidden;background:var(--bg)}
+    /* ── FORM AREA ── */
+    .form-area { flex:1; overflow-y:auto; padding:14px 16px; background:var(--bg) }
+    .form-area::-webkit-scrollbar { width:4px }
+    .form-area::-webkit-scrollbar-thumb { background:var(--border2); border-radius:4px }
 
-    .sect{font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding-bottom:5px;border-bottom:1px solid var(--border)}
+    /* две колонки */
+    #form-inner { display:grid; grid-template-columns:1.15fr 1fr; gap:16px; min-height:100% }
 
-    /* единая сетка — все поля одинаковой ширины */
-    .fields{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end}
-    .field{display:flex;flex-direction:column;gap:4px;width:200px;flex-shrink:0}
-    .field.f-wide{width:420px}    /* наименование */
-    .field.f-note{width:100%}     /* примечание — на всю ширину */
-    label{font-size:12px;font-weight:500;color:var(--sec)}
-    label .req{color:var(--accent)}
+    .col-left  { display:flex; flex-direction:column; gap:0 }
+    .col-right { display:flex; flex-direction:column; gap:0 }
 
-    input,select,textarea{
-      width:100%;background:var(--white);border:1px solid var(--border2);
-      border-radius:7px;color:var(--text);font-size:13px;padding:7px 10px;
-      outline:none;font-family:inherit;transition:border-color .12s,box-shadow .12s;
-      -webkit-appearance:none;
+    /* ── СЕКЦИИ ── */
+    .sect {
+      font-size:10px; font-weight:600; letter-spacing:.08em; text-transform:uppercase;
+      color:var(--muted); padding-bottom:5px; border-bottom:1px solid var(--border); margin-bottom:7px;
     }
-    input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(37,99,235,.1)}
-    select{cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7280' d='M6 8L1 3h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px}
-    ::placeholder{color:var(--muted);font-size:12px}
-    textarea{resize:none;height:50px;line-height:1.4}
 
-    /* RESULT BUTTONS */
-    .result-row{display:flex;gap:5px;flex-wrap:wrap}
-    .rb{padding:5px 12px;border-radius:7px;border:1px solid var(--border2);background:var(--white);color:var(--sec);font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;transition:all .12s}
-    .rb:hover{border-color:#9ca3af;color:var(--text)}
-    /* Недозвон / технические */
-    .rb.on-nedozv  {background:#ffedd5;border-color:#fdba74;color:#c2410c}
-    .rb.on-nekomp  {background:#f3f4f6;border-color:#9ca3af;color:#374151}
-    .rb.on-neabon  {background:#f3f4f6;border-color:#9ca3af;color:#374151}
-    .rb.on-dubl    {background:#f3f4f6;border-color:#9ca3af;color:#374151}
-    /* Отказы */
-    .rb.on-otsek   {background:#fee2e2;border-color:#fca5a5;color:#dc2626}
-    .rb.on-otlpr   {background:#fce7f3;border-color:#f9a8d4;color:#be185d}
-    /* КП */
-    .rb.on-kpsek   {background:#eff6ff;border-color:#93c5fd;color:#1d4ed8}
-    .rb.on-kplpr   {background:#eef2ff;border-color:#a5b4fc;color:#4338ca}
-    /* Перезвон */
-    .rb.on-perzsek {background:#fef9c3;border-color:#fde047;color:#ca8a04}
-    .rb.on-perzlpr {background:#fefce8;border-color:#fef08a;color:#a16207}
-    /* Лид */
-    .rb.on-lid     {background:#dcfce7;border-color:#86efac;color:#16a34a}
+    /* ── ПОЛЯ ── */
+    .fields { display:flex; flex-wrap:wrap; gap:7px; margin-bottom:7px }
+    .field  { display:flex; flex-direction:column; gap:3px }
+    .field.fw { width:100% }
+    .field.f2 { flex:1; min-width:0 }
+    .field.f3 { flex:1; min-width:0 }
+    label { font-size:11px; font-weight:500; color:var(--sec) }
+    label .req { color:var(--accent) }
 
-    /* SIDEBAR LOG */
-    .sidebar{width:260px;border-left:1px solid var(--border);background:var(--white);display:flex;flex-direction:column;flex-shrink:0;overflow:hidden}
-    .sb-head{padding:9px 12px 7px;font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);flex-shrink:0;background:var(--white);display:flex;align-items:center;gap:6px}
-    .sb-clients-count{font-size:10px;font-weight:500;color:var(--accent);background:#eff6ff;border:1px solid #bfdbfe;padding:1px 6px;border-radius:20px;text-transform:none;letter-spacing:0}
-    .sb-list{flex:1;overflow-y:auto;padding:4px 0;min-height:80px}
-    .sb-list::-webkit-scrollbar{width:3px}
-    .sb-list::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
-    .log-item{padding:7px 12px;border-bottom:1px solid var(--border)}
-    .log-item:last-child{border-bottom:none}
-    .log-item.is-processed{opacity:.6}
-    .log-item.is-current{background:#eff6ff;border-left:2px solid var(--accent)}
-    .log-org{font-size:12px;font-weight:500;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .log-meta{display:flex;align-items:center;gap:5px;margin-top:2px}
-    .log-badge{font-size:10px;padding:2px 7px;border-radius:20px;font-weight:500}
-    .log-time{font-size:10px;color:var(--muted);margin-left:auto}
-    .sb-empty{padding:20px 12px;font-size:12px;color:var(--muted);text-align:center;line-height:1.6}
+    input[type="text"],input[type="tel"],input[type="email"],textarea {
+      width:100%; background:var(--white); border:1px solid var(--border2);
+      border-radius:var(--rad); color:var(--text); font-size:13px; padding:6px 9px;
+      outline:none; font-family:inherit; transition:border-color .12s,box-shadow .12s;
+    }
+    input:focus,textarea:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(37,99,235,.08) }
+    input[readonly],textarea[readonly] { background:#f9fafb; color:var(--sec) }
+    ::placeholder { color:var(--muted); font-size:12px }
+
+    /* телефоны — двойная высота */
+    .field.tall input { height:44px }
+
+    /* AI-поля */
+    .field.ai-field textarea {
+      background:#f9fafb; color:var(--sec); resize:none;
+      border-color:var(--border);
+    }
+    .field.ai-field textarea:focus { border-color:var(--accent) }
+
+    /* примечание */
+    textarea.f-note-ta { resize:none; height:54px; line-height:1.4 }
+
+    /* ── DIVIDER ── */
+    .divider { height:1px; background:var(--border); margin:10px 0 }
+
+    /* ── RESULT BUTTONS ── */
+    .result-row { display:flex; gap:5px; flex-wrap:wrap; margin-bottom:2px }
+    .rb { padding:5px 11px; border-radius:var(--rad); border:1px solid var(--border2); background:var(--white); color:var(--sec); font-size:12px; font-weight:500; cursor:pointer; font-family:inherit; transition:all .12s }
+    .rb:hover { border-color:#9ca3af; color:var(--text) }
+    .rb.on-nedozv  { background:#ffedd5; border-color:#fdba74; color:#c2410c }
+    .rb.on-nekomp  { background:#f3f4f6; border-color:#9ca3af; color:#374151 }
+    .rb.on-neabon  { background:#f3f4f6; border-color:#9ca3af; color:#374151 }
+    .rb.on-dubl    { background:#f3f4f6; border-color:#9ca3af; color:#374151 }
+    .rb.on-otsek   { background:#fee2e2; border-color:#fca5a5; color:#dc2626 }
+    .rb.on-otlpr   { background:#fce7f3; border-color:#f9a8d4; color:#be185d }
+    .rb.on-kpsek   { background:#eff6ff; border-color:#93c5fd; color:#1d4ed8 }
+    .rb.on-kplpr   { background:#eef2ff; border-color:#a5b4fc; color:#4338ca }
+    .rb.on-perzsek { background:#fef9c3; border-color:#fde047; color:#ca8a04 }
+    .rb.on-perzlpr { background:#fefce8; border-color:#fef08a; color:#a16207 }
+    .rb.on-lid     { background:#dcfce7; border-color:#86efac; color:#16a34a }
+
+    /* ── БЛОК ПЕРЕЗВОНА ── */
+    #cb-block { display:none; flex-direction:column; gap:8px; background:#fefce8; border:1px solid #fde047; border-radius:var(--rad); padding:11px 13px; margin-top:6px }
+    .cb-block-title { font-size:11px; font-weight:600; color:#ca8a04; text-transform:uppercase; letter-spacing:.06em }
+    #cb-block input[type="datetime-local"] { background:#fff; border:1px solid #fde047; border-radius:var(--rad); color:var(--text); font-size:13px; padding:6px 9px; outline:none; font-family:inherit; width:100% }
+    .cb-save-btn { padding:7px 14px; background:#ca8a04; color:#fff; border:none; border-radius:var(--rad); font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap; margin-top:18px }
+    .cb-block-hint { font-size:11px; color:#a16207 }
+
+    /* ── ИСТОРИЯ ── */
+    .hist-block  { margin-top:10px; border-top:1px solid var(--border); padding-top:8px }
+    .hist-title  { font-size:10px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-bottom:8px }
+    .hist-empty  { font-size:12px; color:var(--muted) }
+    .hist-item   { display:flex; flex-direction:column; gap:3px; padding:7px 9px; background:#fafafa; border:1px solid var(--border); border-radius:6px; margin-bottom:5px }
+    .hist-item:last-child { margin-bottom:0 }
+    .hist-row1   { display:flex; align-items:center; gap:6px; flex-wrap:wrap }
+    .hist-badge  { font-size:11px; font-weight:500; padding:2px 8px; border-radius:20px; white-space:nowrap }
+    .hist-date   { font-size:11px; color:var(--muted); margin-left:auto; white-space:nowrap }
+    .hist-note   { font-size:12px; color:var(--sec); line-height:1.4; word-break:break-word }
+    .hist-mgr    { font-size:11px; color:var(--muted) }
+
+    /* ── AI-БЛОКИ (растягиваемые) ── */
+    .ai-stretch-wrap { display:flex; flex-direction:column; gap:7px; flex:1 }
+    .ai-stretch-field { display:flex; flex-direction:column; gap:3px; flex:1 }
+    .ai-stretch-field label { font-size:11px; font-weight:500; color:var(--sec) }
+    .ai-stretch-field textarea {
+      flex:1; resize:none; background:#f9fafb; color:var(--sec);
+      border:1px solid var(--border2); border-radius:var(--rad);
+      font-size:13px; padding:6px 9px; font-family:inherit; min-height:36px;
+    }
+
+    /* ── SIDEBAR ── */
+    .sidebar { width:252px; border-left:1px solid var(--border); background:var(--white); display:flex; flex-direction:column; flex-shrink:0; overflow:hidden }
+    .sb-head { padding:8px 11px 7px; font-size:10px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); border-bottom:1px solid var(--border); flex-shrink:0; background:var(--white); display:flex; align-items:center; gap:6px }
+    .sb-clients-count { font-size:10px; font-weight:500; color:var(--accent); background:#eff6ff; border:1px solid #bfdbfe; padding:1px 6px; border-radius:20px; text-transform:none; letter-spacing:0 }
+
+    .sb-list { flex:1; overflow-y:auto; padding:3px 0; min-height:60px }
+    .sb-list::-webkit-scrollbar { width:3px }
+    .sb-list::-webkit-scrollbar-thumb { background:var(--border2); border-radius:3px }
+
+    .log-item { padding:6px 11px; border-bottom:1px solid var(--border); transition:background .1s }
+    .log-item:last-child { border-bottom:none }
+    .log-item:hover { background:#f9fafb }
+    .log-item.is-processed { opacity:.6 }
+    .log-item.is-current { background:#eff6ff; border-left:2px solid var(--accent) }
+    .log-org   { font-size:11px; font-weight:500; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+    .log-meta  { display:flex; align-items:center; gap:5px; margin-top:2px }
+    .log-badge { font-size:10px; padding:2px 7px; border-radius:20px; font-weight:500 }
+    .log-unproc { font-size:10px; color:var(--muted) }
+    .sb-empty  { padding:18px 11px; font-size:12px; color:var(--muted); text-align:center; line-height:1.6 }
+
     /* Статистика */
-    .sb-head-stat{border-top:1px solid var(--border);justify-content:space-between}
-    .stat-date-inp{border:1px solid var(--border2);border-radius:5px;font-size:11px;color:var(--text);padding:2px 5px;font-family:inherit;outline:none;background:var(--bg);cursor:pointer;width:96px;flex-shrink:0;letter-spacing:0;text-transform:none;font-weight:400}
-    .stat-date-inp:focus{border-color:var(--accent)}
-    .sb-stat{flex:none;max-height:220px;overflow-y:auto;padding:6px 0}
-    .sb-stat::-webkit-scrollbar{width:3px}
-    .sb-stat::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
-    .stat-empty{padding:12px;font-size:12px;color:var(--muted);text-align:center}
-    .stat-row{display:flex;align-items:center;justify-content:space-between;padding:5px 12px;gap:6px}
-    .stat-row:hover{background:#f9fafb}
-    .stat-label{font-size:12px;color:var(--sec);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
-    .stat-badge{font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;flex-shrink:0}
-    .stat-total{border-top:1px solid var(--border);margin-top:2px;padding-top:6px}
-    .stat-total .stat-label{font-weight:600;color:var(--text)}
-    .stat-total .stat-badge{background:#f3f4f6;color:#374151}
+    .sb-head-stat { border-top:1px solid var(--border); justify-content:space-between }
+    .stat-date-inp { border:1px solid var(--border2); border-radius:5px; font-size:10px; color:var(--text); padding:2px 5px; font-family:inherit; outline:none; background:var(--bg); cursor:pointer; width:94px; text-transform:none; font-weight:400 }
+    .stat-date-inp:focus { border-color:var(--accent) }
+    .sb-stat { flex:none; max-height:200px; overflow-y:auto; padding:5px 0 }
+    .sb-stat::-webkit-scrollbar { width:3px }
+    .sb-stat::-webkit-scrollbar-thumb { background:var(--border2); border-radius:3px }
+    .stat-empty { padding:10px 11px; font-size:11px; color:var(--muted); text-align:center }
+    .stat-row   { display:flex; align-items:center; justify-content:space-between; padding:4px 11px; gap:5px }
+    .stat-row:hover { background:#f9fafb }
+    .stat-label { font-size:11px; color:var(--sec); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+    .stat-badge { font-size:10px; font-weight:600; padding:2px 7px; border-radius:20px; flex-shrink:0 }
+    .stat-total { border-top:1px solid var(--border); margin-top:2px; padding-top:5px }
+    .stat-total .stat-label { font-weight:600; color:var(--text) }
+    .stat-badge-total { background:#f3f4f6; color:#374151 }
+
     /* Перезвоны */
-    .sb-head-cb{border-top:1px solid var(--border);margin-top:0}
-    .sb-list-cb{flex:none;max-height:200px;overflow-y:auto}
-    .sb-list-cb::-webkit-scrollbar{width:3px}
-    .sb-list-cb::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
-    .cb-empty{padding:12px;font-size:12px;color:var(--muted);text-align:center}
-    .cb-item{padding:8px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:4px;transition:background .1s}
-    .cb-item:hover{background:#f9fafb}
-    .cb-item:last-child{border-bottom:none}
-    .cb-item.cb-past{border-left:2px solid #dc2626}
-    .cb-item.cb-soon15{border-left:2px solid #ca8a04}
-    .cb-item-body{display:flex;flex-direction:column;gap:2px}
-    .cb-del-btn{background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;padding:2px 4px;border-radius:4px;flex-shrink:0;transition:all .1s;line-height:1}
-    .cb-del-btn:hover{color:#dc2626;background:#fee2e2}
-    .cb-item-org{font-size:12px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .cb-item-meta{display:flex;align-items:center;justify-content:space-between;margin-top:2px}
-    .cb-item-time{font-size:11px;color:var(--muted)}
-    .cb-item-time.past{color:#dc2626;font-weight:600}
-    .cb-item-time.soon15{color:#ca8a04;font-weight:600}
-    .cb-item-st{font-size:10px;background:#fef9c3;color:#ca8a04;padding:1px 6px;border-radius:10px;white-space:nowrap}
+    .sb-head-cb { border-top:1px solid var(--border) }
+    .sb-list-cb { flex:none; max-height:190px; overflow-y:auto }
+    .sb-list-cb::-webkit-scrollbar { width:3px }
+    .sb-list-cb::-webkit-scrollbar-thumb { background:var(--border2); border-radius:3px }
+    .cb-empty   { padding:10px 11px; font-size:11px; color:var(--muted); text-align:center }
+    .cb-item    { padding:6px 8px 6px 11px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:4px; transition:background .1s }
+    .cb-item:hover { background:#f9fafb }
+    .cb-item:last-child { border-bottom:none }
+    .cb-item.cb-past   { border-left:2px solid #dc2626 }
+    .cb-item.cb-soon15 { border-left:2px solid #ca8a04 }
+    .cb-item-body  { display:flex; flex-direction:column; gap:2px; flex:1; min-width:0 }
+    .cb-item-org   { font-size:11px; font-weight:500; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+    .cb-item-meta  { display:flex; align-items:center; gap:4px }
+    /* дата — тот же стиль что заголовок клиента: 11px, font-weight 500 */
+    .cb-item-time  { font-size:11px; font-weight:500; color:var(--muted) }
+    .cb-item-time.past   { color:#dc2626 }
+    .cb-item-time.soon15 { color:#ca8a04 }
+    .cb-item-st  { font-size:9px; background:#fef9c3; color:#ca8a04; padding:1px 5px; border-radius:8px; white-space:nowrap }
+    /* крестик — просто символ без рамки */
+    .cb-del-btn { background:none; border:none; color:var(--muted); font-size:13px; cursor:pointer; padding:0 3px; line-height:1; opacity:.55; flex-shrink:0 }
+    .cb-del-btn:hover { color:#dc2626; opacity:1 }
 
-    /* BOTTOM BAR */
-    .bottom{display:flex;align-items:center;gap:10px;padding:10px 18px;background:var(--white);border-top:1px solid var(--border);flex-shrink:0}
-    .btn-save{display:flex;align-items:center;gap:6px;padding:8px 20px;background:var(--accent);color:#fff;border:none;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:opacity .12s}
-    .btn-save:hover{opacity:.88}
-    .btn-save:disabled{opacity:.5;cursor:not-allowed}
-    .btn-nav{padding:8px 14px;background:var(--white);border:1px solid var(--border2);color:var(--sec);border-radius:7px;font-size:13px;cursor:pointer;font-family:inherit;transition:all .12s}
-    .btn-nav:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
-    .btn-nav:disabled{opacity:.4;cursor:not-allowed}
-    .progress-txt{font-size:12px;color:var(--muted);margin-left:auto;white-space:nowrap}
+    /* ── BOTTOM BAR ── */
+    .bottom { display:flex; align-items:center; gap:10px; padding:9px 16px; background:var(--white); border-top:1px solid var(--border); flex-shrink:0 }
+    .btn-save { display:flex; align-items:center; gap:6px; padding:8px 20px; background:var(--accent); color:#fff; border:none; border-radius:var(--rad); font-size:13px; font-weight:600; cursor:pointer; font-family:inherit; transition:opacity .12s }
+    .btn-save:hover { opacity:.88 }
+    .btn-save:disabled { opacity:.5; cursor:not-allowed }
+    .btn-nav  { padding:8px 14px; background:var(--white); border:1px solid var(--border2); color:var(--sec); border-radius:var(--rad); font-size:13px; cursor:pointer; font-family:inherit; transition:all .12s }
+    .btn-nav:hover:not(:disabled) { border-color:var(--accent); color:var(--accent) }
+    .btn-nav:disabled { opacity:.4; cursor:not-allowed }
+    .progress-txt { font-size:12px; color:var(--muted); margin-left:auto; white-space:nowrap }
 
-    .spin{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:sp .5s linear infinite;display:none}
-    .btn-save.loading .spin{display:block}
-    .btn-save.loading .save-lbl{display:none}
-    @keyframes sp{to{transform:rotate(360deg)}}
+    .spin { width:14px; height:14px; border:2px solid rgba(255,255,255,.3); border-top-color:#fff; border-radius:50%; animation:sp .5s linear infinite; display:none }
+    .btn-save.loading .spin  { display:block }
+    .btn-save.loading .save-lbl { display:none }
+    @keyframes sp { to { transform:rotate(360deg) } }
 
-    .status{display:none;align-items:center;gap:6px;font-size:13px;font-weight:500;padding:6px 12px;border-radius:7px}
-    .status.ok  {display:flex;background:#dcfce7;color:#16a34a}
-    .status.err {display:flex;background:#fee2e2;color:#dc2626}
-    .status.load{display:flex;background:#eff6ff;color:var(--accent)}
+    .status { display:none; align-items:center; gap:6px; font-size:13px; font-weight:500; padding:6px 12px; border-radius:var(--rad) }
+    .status.ok   { display:flex; background:#dcfce7; color:#16a34a }
+    .status.err  { display:flex; background:#fee2e2; color:#dc2626 }
+    .status.load { display:flex; background:#eff6ff; color:var(--accent) }
 
-    /* END SCREEN */
-    #end-screen{display:none;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:14px;padding:40px;text-align:center}
-    .end-icon{font-size:52px}
-    .end-title{font-size:20px;font-weight:600;color:var(--text)}
-    .end-sub{font-size:14px;color:var(--sec);max-width:300px;line-height:1.6}
-    .btn-reload{padding:10px 24px;background:var(--accent);color:#fff;border:none;border-radius:7px;font-size:14px;font-weight:600;cursor:pointer;margin-top:6px}
-
-    /* ИСТОРИЯ КОММУНИКАЦИИ */
-    .hist-block{margin-top:10px;border-top:2px solid var(--border);padding-top:8px}
-    .hist-title{font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;padding:0 4px}
-    .hist-empty{font-size:12px;color:var(--muted);padding:8px 4px}
-    .hist-item{display:flex;flex-direction:column;gap:3px;padding:8px 10px;background:#fafafa;border:1px solid var(--border);border-radius:6px;margin-bottom:5px}
-    .hist-item:last-child{margin-bottom:0}
-    .hist-row1{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-    .hist-badge{font-size:11px;font-weight:500;padding:2px 8px;border-radius:20px;white-space:nowrap}
-    .hist-date{font-size:11px;color:var(--muted);margin-left:auto;white-space:nowrap}
-    .hist-note{font-size:12px;color:var(--sec);line-height:1.4;word-break:break-word}
-    .hist-mgr{font-size:11px;color:var(--muted)}
+    /* ── END SCREEN ── */
+    #end-screen { display:none; flex-direction:column; align-items:center; justify-content:center; height:100%; gap:14px; padding:40px; text-align:center }
+    .end-icon  { font-size:52px }
+    .end-title { font-size:20px; font-weight:600 }
+    .end-sub   { font-size:14px; color:var(--sec); max-width:300px; line-height:1.6 }
+    .btn-reload { padding:10px 24px; background:var(--accent); color:#fff; border:none; border-radius:var(--rad); font-size:14px; font-weight:600; cursor:pointer; margin-top:6px }
   </style>
 </head>
 <body>
 
+<!-- TOPBAR -->
 <div class="topbar">
   <div class="t-logo">
     <svg viewBox="0 0 20 20"><path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z"/></svg>
@@ -790,120 +722,144 @@
   </div>
 </div>
 
+<!-- BODY -->
 <div class="body">
+
+  <!-- FORM -->
   <div class="form-area">
     <div id="form-inner">
-      <div style="display:flex;flex-direction:column;gap:10px">
 
-        <!-- ОРГАНИЗАЦИЯ -->
+      <!-- ════ ЛЕВАЯ КОЛОНКА: справочная информация ════ -->
+      <div class="col-left">
+
         <div class="sect">Организация</div>
         <div class="fields">
-          <div class="field f-wide">
+          <div class="field fw">
             <label>Наименование <span class="req">*</span></label>
             <input type="text" id="f-org" placeholder="ООО Красотулька" autocomplete="off">
           </div>
-          <div class="field">
-            <label>Рубрика</label>
-            <input type="text" id="f-rubric-txt" placeholder="—" readonly style="background:#f9fafb">
-          </div>
-          <div class="field">
+        </div>
+        <div class="fields">
+          <div class="field f2">
             <label>Регион</label>
-            <input type="text" id="f-region" placeholder="—">
+            <input type="text" id="f-region" readonly>
           </div>
-          <div class="field">
+          <div class="field f2">
             <label>Населённый пункт</label>
-            <input type="text" id="f-city" placeholder="—">
+            <input type="text" id="f-city" readonly>
           </div>
-          <div class="field f-wide">
+        </div>
+        <div class="fields">
+          <div class="field fw">
             <label>Адрес</label>
-            <input type="text" id="f-address" placeholder="—">
+            <input type="text" id="f-address" readonly>
+          </div>
+        </div>
+        <div class="fields">
+          <div class="field fw">
+            <label>Рубрика</label>
+            <input type="text" id="f-rubric-txt" readonly>
+          </div>
+        </div>
+        <div class="fields">
+          <div class="field fw">
+            <label>Основной вид деятельности</label>
+            <input type="text" id="f-activity" readonly>
+          </div>
+        </div>
+        <div class="fields">
+          <div class="field fw">
+            <label>Полученные лицензии</label>
+            <input type="text" id="f-licenses" readonly>
+          </div>
+        </div>
+        <div class="fields">
+          <div class="field f2">
+            <label>Предметы закупок (ОКПД2)</label>
+            <input type="text" id="f-okpd2" readonly>
+          </div>
+          <div class="field f2">
+            <label>Лизингополучатель</label>
+            <input type="text" id="f-leasing" readonly>
           </div>
         </div>
 
-        <!-- КОНТАКТЫ -->
+        <div class="divider"></div>
         <div class="sect">Контакты</div>
         <div class="fields">
-          <div class="field">
+          <div class="field f2 tall">
             <label>Телефон 1 <span class="req">*</span></label>
             <input type="tel" id="f-phone" placeholder="79001234567">
           </div>
-          <div class="field">
+          <div class="field f2 tall">
             <label>Сотовый</label>
             <input type="tel" id="f-mobile" placeholder="79001234567">
           </div>
-          <div class="field">
+        </div>
+        <div class="fields">
+          <div class="field f2 tall">
             <label>Телефон 2</label>
-            <input type="tel" id="f-phone2" placeholder="—">
+            <input type="tel" id="f-phone2">
           </div>
-          <div class="field">
+          <div class="field f2 tall">
             <label>Телефон 3</label>
-            <input type="tel" id="f-phone3" placeholder="—">
+            <input type="tel" id="f-phone3">
           </div>
-          <div class="field">
+        </div>
+        <div class="fields">
+          <div class="field f2 tall">
             <label>E-mail</label>
             <input type="email" id="f-email" placeholder="info@company.ru">
           </div>
-          <div class="field">
+          <div class="field f2 tall">
             <label>Сайт</label>
-            <input type="text" id="f-site" placeholder="—" readonly style="background:#f9fafb">
+            <input type="text" id="f-site" readonly>
           </div>
-          <div class="field">
-            <label>Соц.сети</label>
-            <input type="text" id="f-social" placeholder="—" readonly style="background:#f9fafb">
+          <div class="field f2 tall">
+            <label>Соц. сети</label>
+            <input type="text" id="f-social" readonly>
           </div>
         </div>
 
-        <!-- AI И ДЕЯТЕЛЬНОСТЬ -->
-        <div class="sect">AI / Деятельность</div>
-        <div class="fields">
-          <div class="field f-wide">
+        <div class="divider"></div>
+        <div class="sect">ИИ поиск</div>
+        <div class="ai-stretch-wrap">
+          <div class="ai-stretch-field">
             <label>AI-заключение</label>
-            <input type="text" id="f-ai1" placeholder="—" readonly style="background:#f9fafb">
+            <textarea id="f-ai1" readonly></textarea>
           </div>
-          <div class="field f-wide">
+          <div class="ai-stretch-field">
             <label>AI-заключение 2</label>
-            <input type="text" id="f-ai2" placeholder="—" readonly style="background:#f9fafb">
-          </div>
-          <div class="field f-wide">
-            <label>Основной вид деятельности</label>
-            <input type="text" id="f-activity" placeholder="—" readonly style="background:#f9fafb">
-          </div>
-          <div class="field">
-            <label>Сотрудников</label>
-            <input type="text" id="f-employees" placeholder="—" readonly style="background:#f9fafb">
-          </div>
-          <div class="field f-wide">
-            <label>Полученные лицензии</label>
-            <input type="text" id="f-licenses" placeholder="—" readonly style="background:#f9fafb">
-          </div>
-          <div class="field f-wide">
-            <label>Предметы закупок (ОКПД2)</label>
-            <input type="text" id="f-okpd2" placeholder="—" readonly style="background:#f9fafb">
-          </div>
-          <div class="field">
-            <label>Лизингополучатель</label>
-            <input type="text" id="f-leasing" placeholder="—" readonly style="background:#f9fafb">
+            <textarea id="f-ai2" readonly></textarea>
           </div>
         </div>
 
-        <!-- ЛПР -->
-        <div class="sect">ЛПР</div>
+      </div><!-- /col-left -->
+
+      <!-- ════ ПРАВАЯ КОЛОНКА: рабочая зона менеджера ════ -->
+      <div class="col-right">
+
+        <div class="sect">Информация об ЛПР</div>
         <div class="fields">
-          <div class="field">
+          <div class="field fw">
             <label>Имя</label>
             <input type="text" id="f-lpr-name" placeholder="Татьяна">
           </div>
-          <div class="field">
+        </div>
+        <div class="fields">
+          <div class="field fw">
             <label>Телефон ЛПР</label>
             <input type="tel" id="f-lpr-phone" placeholder="79001234567">
           </div>
-          <div class="field">
+        </div>
+        <div class="fields">
+          <div class="field fw">
             <label>Почта ЛПР</label>
             <input type="email" id="f-lpr-email" placeholder="boss@company.ru">
           </div>
         </div>
 
-        <!-- РЕЗУЛЬТАТ -->
+        <div class="divider"></div>
         <div class="sect">Результат звонка <span class="req" style="text-transform:none;font-size:10px">*</span></div>
         <div class="result-row">
           <button class="rb" data-val="Недозвон"      data-cls="on-nedozv"  onclick="pickResult(this)">Недозвон</button>
@@ -919,42 +875,47 @@
           <button class="rb" data-val="Лид"           data-cls="on-lid"     onclick="pickResult(this)">&#10003; Лид</button>
         </div>
 
-        <!-- БЛОК ПЕРЕЗВОНА — появляется при выборе Перезвон Сек / Перезвон ЛПР -->
-        <div id="cb-block" style="display:none;flex-direction:column;gap:8px;background:#fefce8;border:1px solid #fde047;border-radius:8px;padding:12px 14px">
-          <div style="font-size:12px;font-weight:600;color:#ca8a04;text-transform:uppercase;letter-spacing:.06em">&#128222; Запланировать перезвон</div>
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:200px">
-              <label style="font-size:12px;font-weight:500;color:#6b7280">Дата и время перезвона</label>
-              <input type="datetime-local" id="cb-datetime" style="background:#fff;border:1px solid #fde047;border-radius:7px;color:#111827;font-size:13px;padding:7px 10px;outline:none;font-family:inherit;width:100%">
+        <!-- блок перезвона -->
+        <div id="cb-block">
+          <div class="cb-block-title">&#128222; Запланировать перезвон</div>
+          <div style="display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap">
+            <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:180px">
+              <label style="font-size:11px;font-weight:500;color:var(--sec)">Дата и время</label>
+              <input type="datetime-local" id="cb-datetime">
             </div>
-            <button onclick="saveCallback()" style="padding:8px 16px;background:#ca8a04;color:#fff;border:none;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;margin-top:18px">Сохранить перезвон</button>
+            <button class="cb-save-btn" onclick="saveCallback()">Сохранить перезвон</button>
           </div>
-          <div style="font-size:11px;color:#a16207">Перезвон появится в вашем списке задач. После звонка статус обновится автоматически.</div>
+          <div class="cb-block-hint">Перезвон появится в вашем списке задач.</div>
         </div>
 
-        <!-- ПРИМЕЧАНИЕ -->
+        <div class="divider"></div>
         <div class="sect">Примечание</div>
         <div class="fields">
-          <div class="field f-note">
-            <textarea id="f-note" placeholder="Хочет участвовать, просит прислать ссылку на регистрацию..."></textarea>
+          <div class="field fw">
+            <textarea id="f-note" class="f-note-ta" placeholder="Хочет участвовать, просит прислать ссылку на регистрацию..."></textarea>
           </div>
         </div>
-        <!-- ИСТОРИЯ КОММУНИКАЦИИ С КЛИЕНТОМ -->
-        <div class="hist-block" id="hist-block">
+
+        <!-- история -->
+        <div class="hist-block">
           <div class="hist-title">История коммуникации с клиентом</div>
           <div id="hist-items"><div class="hist-empty">Выберите карточку чтобы увидеть историю</div></div>
         </div>
-      </div>
-    </div>
 
-        <div id="end-screen">
+      </div><!-- /col-right -->
+
+    </div><!-- /#form-inner -->
+
+    <div id="end-screen">
       <div class="end-icon">&#9989;</div>
       <div class="end-title">База закончилась</div>
       <div class="end-sub">Все номера обработаны. Администратор добавит новые строки — обновите страницу чтобы продолжить.</div>
       <button class="btn-reload" onclick="location.reload()">Обновить страницу</button>
     </div>
-  </div>
 
+  </div><!-- /form-area -->
+
+  <!-- SIDEBAR -->
   <div class="sidebar">
     <div class="sb-head">Мои клиенты <span class="sb-clients-count" id="sb-clients-count"></span></div>
     <div class="sb-list" id="log-list">
@@ -972,8 +933,10 @@
       <div class="cb-empty">Загрузка...</div>
     </div>
   </div>
-</div>
 
+</div><!-- /body -->
+
+<!-- BOTTOM BAR -->
 <div class="bottom">
   <button class="btn-nav" id="btn-prev-nav" onclick="goPrev()" disabled>&#8592; Предыдущий</button>
   <button class="btn-save" id="btn-save" onclick="saveClient()">
@@ -1009,13 +972,9 @@ function pickResult(btn) {
   document.querySelectorAll('.rb').forEach(b => b.className = 'rb');
   btn.classList.add(btn.dataset.cls);
   window._selectedResult = btn.dataset.val;
-
-  // Показываем блок планирования перезвона
   const isCallback = ['Перезвон Сек', 'Перезвон ЛПР'].includes(btn.dataset.val);
   const block = document.getElementById('cb-block');
   if (block) block.style.display = isCallback ? 'flex' : 'none';
-
-  // Предустанавливаем время +1 час
   if (isCallback) {
     const dt = document.getElementById('cb-datetime');
     if (dt && !dt.value) {
@@ -1027,35 +986,21 @@ function pickResult(btn) {
   }
 }
 
-function goToHistoryItem(orgName) {
-  if (!orgName) return;
-  const clients = window._allClients || [];
-  const idx = clients.findIndex(c => (c.org_name||'').toLowerCase() === orgName.toLowerCase());
-  if (idx >= 0) { showCard(idx); hideStatus(); }
-  else showStatus('load', 'Карточка не найдена в текущем списке');
-}
-
 function clearFormFields() {
   ['f-org','f-phone','f-mobile','f-email','f-region','f-city','f-address',
    'f-lpr-name','f-lpr-phone','f-lpr-email','f-note',
    'f-site','f-ai1','f-ai2','f-social','f-rubric-txt','f-activity',
-   'f-employees','f-licenses','f-okpd2','f-leasing','f-phone2','f-phone3'
+   'f-licenses','f-okpd2','f-leasing','f-phone2','f-phone3'
   ].forEach(id => {
-    try {
-      const e = document.getElementById(id);
-      if (e && e.value !== undefined) e.value = '';
-    } catch(ex) { console.error('clearFormFields failed on:', id, ex); }
+    try { const e = document.getElementById(id); if (e && e.value !== undefined) e.value = ''; } catch(ex) {}
   });
   document.querySelectorAll('.rb').forEach(b => b.className = 'rb');
   window._selectedResult = '';
-  // Скрываем блок перезвона
   const block = document.getElementById('cb-block');
   if (block) block.style.display = 'none';
   const dt = document.getElementById('cb-datetime');
   if (dt) dt.value = '';
 }
-
-function clearForm() { clearFormFields(); hideStatus(); }
 
 function setBtnLoad(on) {
   const btn = document.getElementById('btn-save');
