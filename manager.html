@@ -23,7 +23,7 @@
 .form-inner{display:flex;gap:16px;align-items:flex-start}
 .col-left{display:flex;flex-direction:column;gap:0;width:400px;flex-shrink:0}
 .col-right{display:flex;flex-direction:column;gap:0;width:480px;flex-shrink:0}
-.col-hist{display:flex;flex-direction:column;gap:0;width:260px;flex-shrink:0;padding-top:450px}
+.col-hist{display:flex;flex-direction:column;gap:0;width:260px;flex-shrink:0;padding-top:60px;overflow:hidden}
 
 /* CARD-секция */
 .card-sect{background:#fff;border-radius:12px;padding:14px 16px;margin-bottom:10px;border:1px solid #e8eaed;box-shadow:0 1px 4px rgba(0,0,0,.04)}
@@ -48,7 +48,7 @@ input[readonly]{background:#f8fafc;color:#64748b;border-color:#e2e8f0}
 
 .field.tall input{height:48px;font-size:14px;font-weight:500}
 
-textarea.f-note{resize:none;height:162px;line-height:1.5;font-size:13px}
+textarea.f-note{resize:none;height:80px;line-height:1.5;font-size:13px}
 textarea.ai-ta{resize:none;flex:1;min-height:50px;background:#f8fafc;color:#64748b;border-color:#e2e8f0;font-size:12px}
 
 /* RESULT BUTTONS */
@@ -192,6 +192,13 @@ textarea.ai-ta{resize:none;flex:1;min-height:50px;background:#f8fafc;color:#6474
             <div class="fields"><div class="field fw"><label>Почта ЛПР</label><input type="email" value="boss@company.ru"></div></div>
           </div>
           <div class="card-sect">
+            <div class="sect">Примечание</div>
+            <div class="fields"><div class="field fw"><textarea class="f-note" placeholder="Хочет участвовать, просит прислать ссылку..."></textarea></div></div>
+          </div>
+        </div>
+
+        <div class="col-hist">
+          <div class="card-sect">
             <div class="sect">Результат звонка <span style="text-transform:none;font-size:10px;color:#2563eb">*</span></div>
             <div class="result-row">
               <button class="rb">Недозвон</button><button class="rb">Не компания</button><button class="rb">Не абонент</button><button class="rb">Дубль</button>
@@ -201,14 +208,7 @@ textarea.ai-ta{resize:none;flex:1;min-height:50px;background:#f8fafc;color:#6474
               <button class="rb on-lid">✓ Лид</button>
             </div>
           </div>
-          <div class="card-sect">
-            <div class="sect">Примечание</div>
-            <div class="fields"><div class="field fw"><textarea class="f-note" placeholder="Хочет участвовать, просит прислать ссылку..."></textarea></div></div>
-          </div>
-        </div>
-
-        <div class="col-hist">
-          <div class="card-sect">
+          <div class="card-sect" style="overflow-y:auto;max-height:220px">
             <div class="sect">История коммуникации</div>
             <div class="hist-item">
               <div class="hist-row1"><span class="hist-badge" style="background:#fce7f3;color:#be185d">Отказ ЛПР</span><span class="hist-date">26.06.2026 18:06</span></div>
