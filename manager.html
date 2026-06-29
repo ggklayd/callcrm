@@ -1,1024 +1,267 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Кабинет менеджера — CallCRM</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+.page{display:flex;flex-direction:column;height:860px;border:0.5px solid var(--border);border-radius:14px;overflow:hidden;background:#f0f2f5;font-family:'Inter',system-ui,sans-serif;font-size:13px}
 
-  <script type="module">
-    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-    import { getFirestore, collection, addDoc, setDoc, doc, serverTimestamp, query, where, getDocs, onSnapshot, orderBy }
-      from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+/* TOPBAR */
+.topbar{display:flex;align-items:center;gap:10px;padding:10px 18px;background:#fff;border-bottom:1px solid #e8eaed;flex-shrink:0;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.t-logo{width:32px;height:32px;background:linear-gradient(135deg,#2563eb,#1d4ed8);border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(37,99,235,.35)}
+.t-logo svg{width:15px;height:15px;fill:#fff}
+.t-proj{font-size:14px;font-weight:700;color:#0f172a;letter-spacing:-.01em}
+.t-sub{font-size:11px;color:#94a3b8;margin-top:1px}
+.t-right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.t-av{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#dbeafe,#bfdbfe);color:#1d4ed8;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;border:2px solid #fff;box-shadow:0 0 0 2px #dbeafe}
+.t-name{font-size:13px;font-weight:500;color:#334155}
+.t-badge{font-size:11px;font-weight:600;background:#eff6ff;color:#2563eb;border:1.5px solid #bfdbfe;padding:3px 10px;border-radius:20px}
 
-    const firebaseConfig = {
-      apiKey:            "AIzaSyD2ssxYMzVt2IUQ2ujRg_7hu2EO3XwtwNg",
-      authDomain:        "ds-group-c8bb2.firebaseapp.com",
-      projectId:         "ds-group-c8bb2",
-      storageBucket:     "ds-group-c8bb2.firebasestorage.app",
-      messagingSenderId: "238132930383",
-      appId:             "1:238132930383:web:ba08ba7e5f3b38a98c073a",
-    };
+/* BODY */
+.body{display:flex;flex:1;min-height:0;overflow:hidden}
 
-    const app = initializeApp(firebaseConfig);
-    const db  = getFirestore(app);
+/* FORM */
+.form-area{flex:1;overflow-y:auto;padding:16px 18px;background:#f0f2f5}
+.form-area::-webkit-scrollbar{width:4px}
+.form-area::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:4px}
+.form-inner{display:flex;gap:16px;align-items:flex-start}
+.col-left{display:flex;flex-direction:column;gap:0;width:400px;flex-shrink:0}
+.col-right{display:flex;flex-direction:column;gap:0;width:320px;flex-shrink:0}
+.col-hist{display:flex;flex-direction:column;gap:0;width:260px;flex-shrink:0;padding-top:450px}
 
-    const params     = new URLSearchParams(location.search);
-    const PROJECT_ID = params.get('project') || 'demo-project';
-    const MANAGER    = params.get('manager') || 'Менеджер';
+/* CARD-секция */
+.card-sect{background:#fff;border-radius:12px;padding:14px 16px;margin-bottom:10px;border:1px solid #e8eaed;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+.sect{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#94a3b8;padding-bottom:8px;border-bottom:1.5px solid #f1f5f9;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.sect-icon{width:16px;height:16px;color:#94a3b8}
 
-    window._currentSheetRow = null;
-    window._spreadsheetId   = null;
-    window._allClients      = [];
-    window._currentIdx      = 0;
-    const WEBHOOK = 'https://script.google.com/macros/s/AKfycbxsCQVfeAFrbipFVIlm3rx2f2z0UP8nuJ6z2DuKrUHdcoHsxZimiJP3pr34SJS7SKpb/exec';
+.fields{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:7px}
+.field{display:flex;flex-direction:column;gap:3px}
+.field.fw{width:100%}
+.field.f2{flex:1;min-width:0}
+label{font-size:11px;font-weight:600;color:#64748b;letter-spacing:.01em}
+label .req{color:#2563eb}
 
-    document.addEventListener('DOMContentLoaded', () => {
-      document.getElementById('m-name').textContent = MANAGER;
-      document.getElementById('m-proj').textContent = PROJECT_ID;
-      const parts = MANAGER.split(/[\s_-]/);
-      const ini   = parts.length >= 2 ? parts[0][0].toUpperCase() + parts[1][0].toUpperCase() : MANAGER.slice(0,2).toUpperCase();
-      document.getElementById('m-av').textContent = ini;
-      loadProjectConfig().then(() => loadAllClients());
-      loadCallbacksList();
-      loadTodayHistory();
-      initStatDate();
-    });
+input[type="text"],input[type="tel"],input[type="email"],textarea{
+  width:100%;background:#fff;border:1.5px solid #e2e8f0;
+  border-radius:9px;color:#0f172a;font-size:13px;padding:8px 11px;
+  outline:none;font-family:inherit;transition:border-color .15s,box-shadow .15s;
+  box-shadow:0 1px 2px rgba(0,0,0,.04)
+}
+input:focus,textarea:focus{border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.1)}
+input[readonly]{background:#f8fafc;color:#64748b;border-color:#e2e8f0}
 
-    // ── Рендер списка клиентов в сайдбар ─────────────────────────
-    function renderClientsInSidebar() {
-      const list = document.getElementById('log-list');
-      if (!list) return;
-      const clients = window._allClients || [];
-      const shown = clients.slice(0, 100);
-      const cnt = document.getElementById('sb-clients-count');
-      if (cnt) cnt.textContent = clients.length > 100 ? '100 / ' + clients.length : clients.length;
-      if (!shown.length) {
-        list.innerHTML = '<div class="sb-empty">Клиентов не найдено</div>';
-        return;
-      }
-      list.innerHTML = shown.map((c, idx) => {
-        let lastResult = '';
-        for (let i = 6; i >= 1; i--) {
-          const r = c['result' + i] || '';
-          if (r) { lastResult = r; break; }
-        }
-        const style = BADGE_STYLES[lastResult] || '';
-        const isProc = c.status === 'обработан';
-        const isCur  = idx === window._currentIdx;
-        return '<div class="log-item' + (isProc ? ' is-processed' : '') + (isCur ? ' is-current' : '') + '" onclick="sidebarGoTo(' + idx + ')" style="cursor:pointer" title="Перейти к карточке">'
-          + '<div class="log-org">' + esc(c.org_name || '—') + '</div>'
-          + '<div class="log-meta">'
-          + (lastResult ? '<span class="log-badge" style="' + style + '">' + esc(lastResult) + '</span>' : '<span class="log-unproc">не обработан</span>')
-          + '</div>'
-          + '</div>';
-      }).join('');
-    }
+.field.tall input{height:48px;font-size:14px;font-weight:500}
 
-    window.sidebarGoTo = function(idx) { showCard(idx); hideStatus(); };
+textarea.f-note{resize:none;height:162px;line-height:1.5;font-size:13px}
+textarea.ai-ta{resize:none;flex:1;min-height:50px;background:#f8fafc;color:#64748b;border-color:#e2e8f0;font-size:12px}
 
-    function sidebarHighlight(idx) {
-      document.querySelectorAll('#log-list .log-item').forEach((el, i) => {
-        el.classList.toggle('is-current', i === idx);
-      });
-    }
+/* RESULT BUTTONS */
+.result-row{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:4px}
+.rb{padding:6px 13px;border-radius:20px;border:1.5px solid #e2e8f0;background:#fff;color:#64748b;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .12s;letter-spacing:.01em}
+.rb:hover{border-color:#94a3b8;color:#334155;transform:translateY(-1px)}
+.rb.on-nedozv {background:#fff7ed;border-color:#fdba74;color:#c2410c}
+.rb.on-otsek  {background:#fef2f2;border-color:#fca5a5;color:#dc2626}
+.rb.on-otlpr  {background:#fdf4ff;border-color:#e879f9;color:#a21caf}
+.rb.on-kpsek  {background:#eff6ff;border-color:#93c5fd;color:#1d4ed8}
+.rb.on-kplpr  {background:#eef2ff;border-color:#a5b4fc;color:#4338ca}
+.rb.on-perzsek{background:#fefce8;border-color:#fde047;color:#ca8a04}
+.rb.on-perzlpr{background:#fffbeb;border-color:#fcd34d;color:#b45309}
+.rb.on-lid    {background:#f0fdf4;border-color:#86efac;color:#16a34a}
 
-    // ── Инициализация даты статистики ─────────────────────────────
-    function initStatDate() {
-      const inp = document.getElementById('stat-date');
-      if (!inp) return;
-      const today = new Date();
-      const pad = n => String(n).padStart(2, '0');
-      const todayStr = today.getFullYear() + '-' + pad(today.getMonth()+1) + '-' + pad(today.getDate());
-      const storageKey = 'crm_stat_date_' + PROJECT_ID + '_' + MANAGER;
-      const saved = localStorage.getItem(storageKey);
-      inp.value = saved || todayStr;
-      inp.addEventListener('change', () => {
-        localStorage.setItem(storageKey, inp.value);
-        renderStats();
-      });
-    }
+/* ИСТОРИЯ */
+.hist-item{display:flex;flex-direction:column;gap:3px;padding:10px 12px;background:#fff;border:1px solid #e8eaed;border-radius:10px;margin-bottom:6px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.hist-row1{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.hist-badge{font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;white-space:nowrap}
+.hist-date{font-size:11px;color:#94a3b8;margin-left:auto}
+.hist-note{font-size:12px;color:#475569;line-height:1.4}
+.hist-mgr{font-size:11px;color:#94a3b8;font-style:italic}
+.hist-empty{font-size:12px;color:#94a3b8;padding:8px 0}
 
-    // ── Статистика по выбранной дате ──────────────────────────────
-    function renderStats() {
-      const inp = document.getElementById('stat-date');
-      const wrap = document.getElementById('stat-block');
-      if (!inp || !wrap) return;
-      const selectedDate = inp.value;
-      if (!selectedDate) { wrap.innerHTML = '<div class="stat-empty">Выберите дату</div>'; return; }
-      const [y, m, d] = selectedDate.split('-');
-      const ddmmyyyy = d + '.' + m + '.' + y;
-      const clients = window._allClients || [];
-      const counts = {};
-      let total = 0;
-      clients.forEach(c => {
-        for (let i = 1; i <= 6; i++) {
-          const result  = c['result'  + i] || '';
-          const date    = c['date'    + i] || '';
-          const manager = c['manager' + i] || '';
-          if (!result || !date || !manager) continue;
-          if (manager.trim() !== MANAGER.trim()) continue;
-          let dateNorm = '';
-          const dateVal = date instanceof Date ? date : (typeof date === 'string' ? date.trim() : String(date).trim());
-          if (dateVal instanceof Date || (typeof dateVal === 'string' && dateVal.match(/^\d{4}-/))) {
-            const dt = new Date(dateVal);
-            if (!isNaN(dt)) {
-              const pad = n => String(n).padStart(2,'0');
-              dateNorm = pad(dt.getDate()) + '.' + pad(dt.getMonth()+1) + '.' + dt.getFullYear();
-            }
-          } else {
-            dateNorm = dateVal.replace(/(\d{2})\.(\d{2})\.(\d{4}).*/, '$1.$2.$3');
-          }
-          if (dateNorm === ddmmyyyy) { counts[result] = (counts[result] || 0) + 1; total++; }
-        }
-      });
-      if (!total) { wrap.innerHTML = '<div class="stat-empty">Нет звонков за ' + ddmmyyyy + '</div>'; return; }
-      const ORDER = ['Лид','КП ЛПР','КП Сек','Перезвон ЛПР','Перезвон Сек','Отказ ЛПР','Отказ Сек','Недозвон','Дубль','Не абонент','Не компания'];
-      const rows = ORDER.filter(s => counts[s]).map(s => ({ s, n: counts[s] }));
-      Object.keys(counts).filter(s => !ORDER.includes(s)).forEach(s => rows.push({ s, n: counts[s] }));
-      wrap.innerHTML = rows.map(r => {
-        const style = BADGE_STYLES[r.s] || 'background:#f3f4f6;color:#374151';
-        return '<div class="stat-row"><span class="stat-label">' + esc(r.s) + '</span><span class="stat-badge" style="' + style + '">' + r.n + '</span></div>';
-      }).join('')
-      + '<div class="stat-row stat-total"><span class="stat-label">Всего звонков</span><span class="stat-badge stat-badge-total">' + total + '</span></div>';
-    }
+/* SIDEBAR */
+.sidebar{width:240px;border-left:1px solid #e8eaed;background:#fff;display:flex;flex-direction:column;flex-shrink:0;overflow:hidden}
+.sb-head{padding:9px 12px 8px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#94a3b8;border-bottom:1px solid #f1f5f9;flex-shrink:0;display:flex;align-items:center;gap:6px}
+.sb-count{font-size:10px;font-weight:700;color:#2563eb;background:#eff6ff;border:1.5px solid #bfdbfe;padding:1px 7px;border-radius:20px;text-transform:none;letter-spacing:0}
+.sb-list{flex:1;overflow-y:auto;padding:4px 0}
+.log-item{padding:8px 12px;border-bottom:1px solid #f8fafc;cursor:pointer;transition:background .1s}
+.log-item:hover{background:#f8fafc}
+.log-item.is-current{background:#eff6ff;border-left:3px solid #2563eb}
+.log-item.is-processed{opacity:.55}
+.log-org{font-size:12px;font-weight:600;color:#0f172a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.log-meta{display:flex;align-items:center;gap:5px;margin-top:3px}
+.log-badge{font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600}
+.log-unproc{font-size:10px;color:#94a3b8}
+.sb-empty{padding:20px 12px;font-size:12px;color:#94a3b8;text-align:center;line-height:1.6}
+.sb-head-stat{border-top:1px solid #f1f5f9;justify-content:space-between}
+.stat-date{border:1.5px solid #e2e8f0;border-radius:6px;font-size:10px;color:#0f172a;padding:2px 6px;font-family:inherit;outline:none;background:#f8fafc;cursor:pointer;width:96px}
+.sb-stat{flex:none;max-height:180px;overflow-y:auto;padding:5px 0}
+.stat-row{display:flex;align-items:center;justify-content:space-between;padding:4px 12px;gap:5px}
+.stat-row:hover{background:#f8fafc}
+.stat-lbl{font-size:11px;color:#475569;flex:1}
+.stat-num{font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;flex-shrink:0}
+.stat-total{border-top:1px solid #f1f5f9;margin-top:2px;padding-top:4px}
+.stat-total .stat-lbl{font-weight:700;color:#0f172a}
+.sb-head-cb{border-top:1px solid #f1f5f9}
+.sb-list-cb{flex:none;max-height:170px;overflow-y:auto}
+.cb-item{padding:7px 9px 7px 12px;border-bottom:1px solid #f8fafc;display:flex;align-items:center;gap:4px}
+.cb-item.cb-past{border-left:3px solid #dc2626}
+.cb-item.cb-soon15{border-left:3px solid #ca8a04}
+.cb-item-body{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
+.cb-item-org{font-size:11px;font-weight:600;color:#0f172a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cb-item-meta{display:flex;align-items:center;gap:4px}
+.cb-item-time{font-size:11px;font-weight:600;color:#94a3b8}
+.cb-item-time.past{color:#dc2626}
+.cb-item-time.soon15{color:#ca8a04}
+.cb-item-st{font-size:9px;background:#fefce8;color:#ca8a04;padding:1px 6px;border-radius:8px;white-space:nowrap;font-weight:600}
+.cb-del-btn{background:none;border:none;color:#cbd5e1;font-size:13px;cursor:pointer;padding:0 3px;line-height:1;opacity:.7}
+.cb-del-btn:hover{color:#dc2626;opacity:1}
+.cb-empty{padding:10px 12px;font-size:11px;color:#94a3b8;text-align:center}
 
-    async function loadTodayHistory() { /* клиенты рендерятся из _allClients */ }
+/* DIVIDER */
+.divider{height:1px;background:#f1f5f9;margin:10px 0}
 
-    // ── Загружаем список перезвонов в сайдбар ────────────────────
-    function loadCallbacksList() {
-      const q = query(
-        collection(db, 'callbacks'),
-        where('project', '==', PROJECT_ID),
-        where('manager', '==', MANAGER),
-        where('done',    '==', false),
-        orderBy('callbackAt', 'asc')
-      );
-      onSnapshot(q, (snap) => {
-        window._callbacks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        window.renderCallbacks();
-      }, (err) => {
-        console.error('callbacks error:', err.code, err.message);
-        const wrap = document.getElementById('cb-list');
-        if (wrap) wrap.innerHTML = '<div class="cb-empty" style="color:#dc2626">Ошибка: ' + err.code + '</div>';
-      });
-    }
+/* BOTTOM */
+.bottom{display:flex;align-items:center;gap:10px;padding:11px 18px;background:#fff;border-top:1px solid #e8eaed;flex-shrink:0;box-shadow:0 -1px 4px rgba(0,0,0,.04)}
+.btn-save{display:flex;align-items:center;gap:6px;padding:9px 22px;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 2px 8px rgba(37,99,235,.35);letter-spacing:.01em}
+.btn-nav{padding:9px 16px;background:#fff;border:1.5px solid #e2e8f0;color:#475569;border-radius:10px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit}
+.btn-nav:hover{border-color:#2563eb;color:#2563eb}
+.progress-txt{font-size:12px;color:#94a3b8;margin-left:auto;font-weight:500}
+.ai-stretch-wrap{display:flex;flex-direction:column;gap:7px;flex:1}
+.ai-stretch-field{display:flex;flex-direction:column;gap:3px;flex:1}
+</style>
 
-    window.renderCallbacks = function() {
-      const wrap = document.getElementById('cb-list');
-      if (!wrap) return;
-      const cbs = window._callbacks || [];
-      if (!cbs.length) { wrap.innerHTML = '<div class="cb-empty">Нет запланированных перезвонов</div>'; return; }
-      const now = new Date();
-      wrap.innerHTML = cbs.map((cb, idx) => {
-        const d        = cb.callbackAt?.toDate ? cb.callbackAt.toDate() : new Date(cb.callbackAt);
-        const diffMs   = d - now;
-        const diffMin  = diffMs / 60000;
-        const isPast   = diffMs < 0;
-        const isSoon5  = !isPast && diffMin <= 5;
-        const isSoon15 = !isPast && diffMin <= 15 && diffMin > 5;
-        const dateStr  = d.toLocaleDateString('ru-RU', {day:'2-digit', month:'2-digit'});
-        const timeStr  = d.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
-        const itemCls  = isPast || isSoon5 ? 'cb-past' : (isSoon15 ? 'cb-soon15' : '');
-        const timeCls  = isPast || isSoon5 ? 'past' : (isSoon15 ? 'soon15' : '');
-        return '<div class="cb-item ' + itemCls + '">'
-          + '<div class="cb-item-body" onclick="goToCallback(' + idx + ')" style="flex:1;cursor:pointer;min-width:0">'
-          +   '<div class="cb-item-org">' + esc2(cb.org_name || '—') + '</div>'
-          +   '<div class="cb-item-meta">'
-          +     '<span class="cb-item-time ' + timeCls + '">' + dateStr + ' ' + timeStr + '</span>'
-          +     '<span class="cb-item-st">' + esc2(cb.lastResult || '') + '</span>'
-          +   '</div>'
-          + '</div>'
-          + '<button class="cb-del-btn" data-cbid="' + cb.id + '" data-org="' + esc2(cb.org_name||'') + '" onclick="confirmDeleteCallback(this.dataset.cbid,this.dataset.org)" title="Удалить перезвон">&#10005;</button>'
-          + '</div>';
-      }).join('');
-    };
-
-    setInterval(function() {
-      if (window._callbacks && window._callbacks.length) window.renderCallbacks();
-    }, 60000);
-
-    window.confirmDeleteCallback = function(cbId, orgName) {
-      if (confirm('Удалить перезвон для «' + orgName + '»?')) { deleteCallback(cbId); }
-    };
-
-    async function deleteCallback(cbId) {
-      try {
-        const { deleteDoc, doc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
-        await deleteDoc(doc(db, 'callbacks', cbId));
-      } catch(e) { console.error('deleteCallback:', e.message); }
-    }
-
-    window.goToCallback = function(idx) {
-      const cb = (window._callbacks || [])[idx];
-      if (!cb) return;
-      const clients = window._allClients || [];
-      if (clients.length > 0 && cb.sheetRow) {
-        const cardIdx = clients.findIndex(c => c.rowNum === cb.sheetRow);
-        if (cardIdx >= 0) { showCard(cardIdx); hideStatus(); return; }
-      }
-      if (clients.length > 0 && cb.org_name) {
-        const cardIdx = clients.findIndex(c => (c.org_name || '').toLowerCase() === (cb.org_name || '').toLowerCase());
-        if (cardIdx >= 0) { showCard(cardIdx); hideStatus(); return; }
-      }
-      showStatus('load', 'Список контактов загружается, попробуйте снова через секунду');
-    };
-
-    function esc2(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-
-    async function loadProjectConfig() {
-      try {
-        const { getDoc, doc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
-        const snap = await getDoc(doc(db, 'admin_projects', PROJECT_ID));
-        if (snap.exists()) {
-          const d = snap.data();
-          if (d.sheets_url) {
-            const m = d.sheets_url.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
-            if (m) window._spreadsheetId = m[1];
-          }
-        }
-      } catch(e) { console.warn('Конфиг:', e.message); }
-    }
-
-    async function loadAllClients() {
-      if (!window._spreadsheetId) { showStatus('err', 'Таблица не привязана к проекту. Обратитесь к администратору.'); return; }
-      showStatus('load', 'Загружаю список контактов...');
-      try {
-        const url  = WEBHOOK + '?action=getAllClients&manager=' + encodeURIComponent(MANAGER) + '&spreadsheetId=' + window._spreadsheetId;
-        const resp = await fetch(url);
-        const data = await resp.json();
-        if (!data.ok) { showStatus('err', 'Ошибка: ' + (data.error || 'неизвестная')); return; }
-        window._allClients = data.clients || [];
-        if (!window._allClients.length) { showEndOfBase(); return; }
-        const firstNew = window._allClients.findIndex(c => c.status !== 'обработан');
-        window._currentIdx = firstNew >= 0 ? firstNew : 0;
-        showCard(window._currentIdx);
-        hideStatus();
-        renderClientsInSidebar();
-        renderStats();
-      } catch(err) {
-        showStatus('err', 'Ошибка загрузки: ' + err.message);
-      }
-    }
-
-    function showCard(idx) {
-      const c = window._allClients[idx];
-      if (!c) return;
-      window._currentSheetRow = c.rowNum;
-      window._currentIdx      = idx;
-      setF('f-org',       c.org_name);
-      setF('f-phone',     c.phone1);
-      setF('f-mobile',    c.mobile);
-      setF('f-phone2',    c.phone2);
-      setF('f-phone3',    c.phone3);
-      setF('f-email',     c.email);
-      setF('f-site',      c.site);
-      setF('f-ai1',       c.ai1);
-      setF('f-ai2',       c.ai2);
-      setF('f-social',    c.social);
-      setF('f-rubric-txt',c.rubric);
-      setF('f-activity',  c.activity);
-      setF('f-region',    c.region);
-      setF('f-city',      c.city);
-      setF('f-address',   c.address);
-      setF('f-licenses',  c.licenses);
-      setF('f-okpd2',     c.okpd2);
-      setF('f-leasing',   c.leasing);
-      setF('f-lpr-name',  c.lpr_name);
-      setF('f-lpr-phone', c.lpr_phone);
-      setF('f-lpr-email', c.lpr_email);
-      document.querySelectorAll('.rb').forEach(b => b.className = 'rb');
-      window._selectedResult = '';
-      setF('f-note', '');
-      const block = document.getElementById('cb-block');
-      if (block) block.style.display = 'none';
-      const dt = document.getElementById('cb-datetime');
-      if (dt) dt.value = '';
-      updateNav();
-      updateProgress();
-      renderCardHistory(c);
-      sidebarHighlight(idx);
-    }
-
-    function renderCardHistory(c) {
-      const wrap = document.getElementById('hist-items');
-      if (!wrap) return;
-      const attempts = [];
-      for (let i = 1; i <= 6; i++) {
-        const result = c['result' + i] || '';
-        const note   = c['note'   + i] || '';
-        const date   = c['date'   + i] || '';
-        const time   = c['time'   + i] || '';
-        const mgr    = c['manager'+ i] || '';
-        if (result) attempts.push({ result, note, date, time, mgr, num: i });
-      }
-      if (!attempts.length && c.lastResult) {
-        attempts.push({ result: c.lastResult, note: '', date: '', time: '', mgr: '', num: 1 });
-      }
-      if (!attempts.length) {
-        wrap.innerHTML = '<div class="hist-empty">Звонков по этому клиенту ещё не было</div>';
-        return;
-      }
-      const BADGE_COLORS = {
-        'Лид':           'background:#dcfce7;color:#16a34a',
-        'Перезвон Сек':  'background:#fef9c3;color:#ca8a04',
-        'Перезвон ЛПР':  'background:#fef9c3;color:#ca8a04',
-        'КП Сек':        'background:#dbeafe;color:#1d4ed8',
-        'КП ЛПР':        'background:#dbeafe;color:#1d4ed8',
-        'Отказ Сек':     'background:#fee2e2;color:#dc2626',
-        'Отказ ЛПР':     'background:#fce7f3;color:#be185d',
-        'Недозвон':      'background:#ffedd5;color:#c2410c',
-        'Не компания':   'background:#f3f4f6;color:#374151',
-        'Не абонент':    'background:#f3f4f6;color:#374151',
-        'Дубль':         'background:#f3f4f6;color:#374151',
-      };
-      wrap.innerHTML = attempts.reverse().map(a => {
-        const bStyle  = BADGE_COLORS[a.result] || 'background:#f3f4f6;color:#6b7280';
-        const dateStr = [a.date, a.time].filter(Boolean).join(' ') || '—';
-        return '<div class="hist-item">'
-          + '<div class="hist-row1">'
-          +   '<span class="hist-badge" style="' + bStyle + '">' + esc(a.result) + '</span>'
-          +   '<span class="hist-date">' + esc(dateStr) + '</span>'
-          + '</div>'
-          + (a.note ? '<div class="hist-note">' + esc(a.note) + '</div>' : '')
-          + (a.mgr  ? '<div class="hist-mgr">' + esc(a.mgr) + '</div>' : '')
-          + '</div>';
-      }).join('');
-    }
-
-    window.saveCallback = async function() {
-      const dt = document.getElementById('cb-datetime');
-      if (!dt || !dt.value) { showStatus('err', 'Выберите дату и время перезвона'); return; }
-      const cbData = {
-        project:    PROJECT_ID,
-        manager:    MANAGER,
-        sheetRow:   window._currentSheetRow,
-        org_name:   document.getElementById('f-org')?.value || '',
-        phone:      document.getElementById('f-phone')?.value || '',
-        note:       document.getElementById('f-note')?.value || '',
-        lastResult: window._selectedResult || '',
-        callbackAt: new Date(dt.value),
-        done:       false,
-        createdAt:  serverTimestamp(),
-      };
-      try {
-        await addDoc(collection(db, 'callbacks'), cbData);
-        document.getElementById('cb-block').style.display = 'none';
-        showStatus('ok', 'Перезвон запланирован на ' + new Date(dt.value).toLocaleString('ru-RU', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}));
-      } catch(e) { showStatus('err', 'Ошибка: ' + e.message); }
-    };
-
-    async function markCallbackDone(sheetRow) {
-      if (!sheetRow) return;
-      try {
-        const { getDocs, collection, query, where, updateDoc, doc }
-          = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
-        const q = query(
-          collection(db, 'callbacks'),
-          where('project',  '==', PROJECT_ID),
-          where('manager',  '==', MANAGER),
-          where('sheetRow', '==', sheetRow),
-          where('done',     '==', false)
-        );
-        const snap = await getDocs(q);
-        snap.docs.forEach(async d => { await updateDoc(doc(db, 'callbacks', d.id), { done: true }); });
-      } catch(e) { console.warn('markCallbackDone:', e.message); }
-    }
-
-    window.goNext = function() {
-      if (window._currentIdx < window._allClients.length - 1) { showCard(window._currentIdx + 1); hideStatus(); }
-    };
-    window.goPrev = function() {
-      if (window._currentIdx > 0) { showCard(window._currentIdx - 1); hideStatus(); }
-    };
-
-    window.updateNav = function() {
-      const idx   = window._currentIdx;
-      const total = window._allClients.length;
-      const prev  = document.getElementById('btn-prev-nav');
-      const next  = document.getElementById('btn-next-nav');
-      if (prev) prev.disabled = idx <= 0;
-      if (next) next.disabled = idx >= total - 1;
-    };
-
-    window.updateProgress = function() {
-      const idx   = window._currentIdx;
-      const total = window._allClients.length;
-      const done  = window._allClients.filter(c => c.status === 'обработан').length;
-      const el    = document.getElementById('m-progress');
-      if (el) el.textContent = (idx + 1) + ' / ' + total + ' · обработано: ' + done;
-    };
-
-    window.saveClient = async function() {
-      const org    = gv('f-org').trim();
-      const phone  = gv('f-phone').trim();
-      const result = window._selectedResult || '';
-      if (!org)    { showStatus('err','Укажите организацию'); return; }
-      if (!phone)  { showStatus('err','Укажите телефон'); return; }
-      if (!result) { showStatus('err','Выберите результат звонка'); return; }
-      try { setBtnLoad(true); } catch(e) {}
-      const c = window._allClients[window._currentIdx] || {};
-      const clientData = {
-        org_name:  org,
-        phone1:    phone,
-        mobile:    gv('f-mobile').trim(),
-        email:     gv('f-email').trim(),
-        rubric:    c.rubric    || '',
-        type_add:  c.type_add  || '',
-        region:    gv('f-region').trim(),
-        city:      gv('f-city').trim(),
-        address:   gv('f-address').trim(),
-        lpr_name:  gv('f-lpr-name').trim(),
-        lpr_phone: gv('f-lpr-phone').trim(),
-        lpr_email: gv('f-lpr-email').trim(),
-        result,
-        note:      gv('f-note').trim(),
-        manager:   MANAGER,
-        project:   PROJECT_ID,
-        createdAt: serverTimestamp(),
-        dateStr:   new Date().toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}),
-      };
-      try {
-        await addDoc(collection(db,'projects',PROJECT_ID,'clients'), clientData);
-        showStatus('ok', '"' + org + '" сохранён');
-        clearFormFields();
-        if (window._currentSheetRow) {
-          const sid2 = window._spreadsheetId ? '&spreadsheetId=' + window._spreadsheetId : '';
-          const url = WEBHOOK + '?action=markDone&row=' + window._currentSheetRow
-            + '&result=' + encodeURIComponent(result)
-            + '&note='   + encodeURIComponent(clientData.note)
-            + '&manager='+ encodeURIComponent(MANAGER)
-            + '&project='+ encodeURIComponent(PROJECT_ID)
-            + sid2;
-          fetch(url, {mode:'no-cors'}).catch(()=>{});
-          window._currentSheetRow = null;
-        } else {
-          const postBody = Object.assign({}, clientData);
-          if (window._spreadsheetId) postBody.spreadsheetId = window._spreadsheetId;
-          fetch(WEBHOOK, {method:'POST',mode:'no-cors',body:JSON.stringify({data:postBody})}).catch(()=>{});
-        }
-        if (window._allClients[window._currentIdx]) {
-          window._allClients[window._currentIdx].status = 'обработан';
-          const cv = window._allClients[window._currentIdx];
-          for (let i = 1; i <= 6; i++) {
-            if (!cv['result' + i]) {
-              cv['result' + i] = result;
-              cv['date'   + i] = new Date().toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'});
-              cv['time'   + i] = new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
-              cv['manager'+ i] = MANAGER;
-              break;
-            }
-          }
-        }
-        updateProgress();
-        renderClientsInSidebar();
-        renderStats();
-        markCallbackDone(window._currentSheetRow);
-      } catch(err) {
-        showStatus('err', err.code === 'permission-denied' ? 'Нет прав записи' : 'Ошибка: ' + err.message);
-      } finally {
-        try { setBtnLoad(false); } catch(e) {}
-      }
-    };
-
-    function showEndOfBase() {
-      hideStatus();
-      document.getElementById('form-inner').style.display = 'none';
-      document.getElementById('end-screen').style.display = 'flex';
-    }
-
-    function setF(id, val) { const e=document.getElementById(id); if(e) e.value=val||''; }
-    function gv(id)  { const e=document.getElementById(id); return e?e.value:''; }
-  </script>
-
-  <style>
-    *,*::before,*::after { box-sizing:border-box; margin:0; padding:0 }
-    :root {
-      --bg:#f5f6f8;
-      --white:#ffffff;
-      --border:#e5e7eb;
-      --border2:#d1d5db;
-      --text:#111827;
-      --sec:#6b7280;
-      --muted:#9ca3af;
-      --accent:#2563eb;
-      --rad:8px;
-    }
-    html,body { height:100%; overflow:hidden }
-    body { font-family:'Inter',system-ui,sans-serif; background:var(--bg); color:var(--text); display:flex; flex-direction:column; font-size:14px }
-
-    /* ── TOPBAR ── */
-    .topbar { display:flex; align-items:center; gap:10px; padding:9px 16px; background:var(--white); border-bottom:1px solid var(--border); flex-shrink:0 }
-    .t-logo { width:28px; height:28px; background:var(--accent); border-radius:7px; display:flex; align-items:center; justify-content:center; flex-shrink:0 }
-    .t-logo svg { width:14px; height:14px; fill:#fff }
-    .t-proj { font-size:14px; font-weight:600; color:var(--text) }
-    .t-sub  { font-size:11px; color:var(--muted); margin-top:1px }
-    .t-right { margin-left:auto; display:flex; align-items:center; gap:8px }
-    .t-av   { width:28px; height:28px; border-radius:50%; background:#dbeafe; color:var(--accent); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:600 }
-    .t-name { font-size:13px; color:var(--sec) }
-    .t-count { font-size:11px; background:#eff6ff; color:var(--accent); border:1px solid #bfdbfe; padding:2px 8px; border-radius:20px }
-
-    /* ── BODY ── */
-    .body { display:flex; flex:1; min-height:0; overflow:hidden }
-
-    /* ── FORM AREA ── */
-    .form-area { flex:1; overflow-y:auto; padding:14px 16px; background:var(--bg); display:flex; flex-direction:column }
-    .form-area::-webkit-scrollbar { width:4px }
-    .form-area::-webkit-scrollbar-thumb { background:var(--border2); border-radius:4px }
-
-    /* две колонки */
-    #form-inner { display:flex; gap:16px; align-items:flex-start; flex:1 }
-
-    .col-left  { display:flex; flex-direction:column; gap:0; width:580px; flex-shrink:0 }
-    .col-right { display:flex; flex-direction:column; gap:0; width:416px; flex-shrink:0 }
-    .col-hist  { display:flex; flex-direction:column; gap:0; width:300px; flex-shrink:0; padding-top:450px }
-
-    /* ── СЕКЦИИ ── */
-    .sect {
-      font-size:10px; font-weight:600; letter-spacing:.08em; text-transform:uppercase;
-      color:var(--muted); padding-bottom:5px; border-bottom:1px solid var(--border); margin-bottom:7px;
-    }
-
-    /* ── ПОЛЯ ── */
-    .fields { display:flex; flex-wrap:wrap; gap:7px; margin-bottom:7px }
-    .field  { display:flex; flex-direction:column; gap:3px }
-    .field.fw { width:100% }
-    .field.f2 { flex:1; min-width:0 }
-    .field.f3 { flex:1; min-width:0 }
-    label { font-size:11px; font-weight:500; color:var(--sec) }
-    label .req { color:var(--accent) }
-
-    input[type="text"],input[type="tel"],input[type="email"],textarea {
-      width:100%; background:var(--white); border:1px solid var(--border2);
-      border-radius:var(--rad); color:var(--text); font-size:13px; padding:6px 9px;
-      outline:none; font-family:inherit; transition:border-color .12s,box-shadow .12s;
-    }
-    input:focus,textarea:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(37,99,235,.08) }
-    input[readonly],textarea[readonly] { background:#f9fafb; color:var(--sec) }
-    ::placeholder { color:var(--muted); font-size:12px }
-
-    /* телефоны — двойная высота */
-    .field.tall input { height:44px }
-
-    /* AI-поля */
-    .field.ai-field textarea {
-      background:#f9fafb; color:var(--sec); resize:none;
-      border-color:var(--border);
-    }
-    .field.ai-field textarea:focus { border-color:var(--accent) }
-
-    /* примечание */
-    textarea.f-note-ta { resize:none; height:162px; line-height:1.4 }
-
-    /* ── DIVIDER ── */
-    .divider { height:1px; background:var(--border); margin:10px 0 }
-
-    /* ── RESULT BUTTONS ── */
-    .result-row { display:flex; gap:5px; flex-wrap:wrap; margin-bottom:2px }
-    .rb { padding:5px 11px; border-radius:var(--rad); border:1px solid var(--border2); background:var(--white); color:var(--sec); font-size:12px; font-weight:500; cursor:pointer; font-family:inherit; transition:all .12s }
-    .rb:hover { border-color:#9ca3af; color:var(--text) }
-    .rb.on-nedozv  { background:#ffedd5; border-color:#fdba74; color:#c2410c }
-    .rb.on-nekomp  { background:#f3f4f6; border-color:#9ca3af; color:#374151 }
-    .rb.on-neabon  { background:#f3f4f6; border-color:#9ca3af; color:#374151 }
-    .rb.on-dubl    { background:#f3f4f6; border-color:#9ca3af; color:#374151 }
-    .rb.on-otsek   { background:#fee2e2; border-color:#fca5a5; color:#dc2626 }
-    .rb.on-otlpr   { background:#fce7f3; border-color:#f9a8d4; color:#be185d }
-    .rb.on-kpsek   { background:#eff6ff; border-color:#93c5fd; color:#1d4ed8 }
-    .rb.on-kplpr   { background:#eef2ff; border-color:#a5b4fc; color:#4338ca }
-    .rb.on-perzsek { background:#fef9c3; border-color:#fde047; color:#ca8a04 }
-    .rb.on-perzlpr { background:#fefce8; border-color:#fef08a; color:#a16207 }
-    .rb.on-lid     { background:#dcfce7; border-color:#86efac; color:#16a34a }
-
-    /* ── БЛОК ПЕРЕЗВОНА ── */
-    #cb-block { display:none; flex-direction:column; gap:8px; background:#fefce8; border:1px solid #fde047; border-radius:var(--rad); padding:11px 13px; margin-top:6px }
-    .cb-block-title { font-size:11px; font-weight:600; color:#ca8a04; text-transform:uppercase; letter-spacing:.06em }
-    #cb-block input[type="datetime-local"] { background:#fff; border:1px solid #fde047; border-radius:var(--rad); color:var(--text); font-size:13px; padding:6px 9px; outline:none; font-family:inherit; width:100% }
-    .cb-save-btn { padding:7px 14px; background:#ca8a04; color:#fff; border:none; border-radius:var(--rad); font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap; margin-top:18px }
-    .cb-block-hint { font-size:11px; color:#a16207 }
-
-    /* ── ИСТОРИЯ ── */
-    .hist-block  { margin-top:0 }
-    .hist-title  { font-size:10px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-bottom:8px }
-    .hist-empty  { font-size:12px; color:var(--muted) }
-    .hist-item   { display:flex; flex-direction:column; gap:3px; padding:7px 9px; background:#fafafa; border:1px solid var(--border); border-radius:6px; margin-bottom:5px }
-    .hist-item:last-child { margin-bottom:0 }
-    .hist-row1   { display:flex; align-items:center; gap:6px; flex-wrap:wrap }
-    .hist-badge  { font-size:11px; font-weight:500; padding:2px 8px; border-radius:20px; white-space:nowrap }
-    .hist-date   { font-size:11px; color:var(--muted); margin-left:auto; white-space:nowrap }
-    .hist-note   { font-size:12px; color:var(--sec); line-height:1.4; word-break:break-word }
-    .hist-mgr    { font-size:11px; color:var(--muted) }
-
-    /* ── AI-БЛОКИ (растягиваемые) ── */
-    .ai-stretch-wrap { display:flex; flex-direction:column; gap:7px; flex:1 }
-    .ai-stretch-field { display:flex; flex-direction:column; gap:3px; flex:1 }
-    .ai-stretch-field label { font-size:11px; font-weight:500; color:var(--sec) }
-    .ai-stretch-field textarea {
-      flex:1; resize:none; background:#f9fafb; color:var(--sec);
-      border:1px solid var(--border2); border-radius:var(--rad);
-      font-size:13px; padding:6px 9px; font-family:inherit; min-height:36px;
-    }
-
-    /* ── SIDEBAR ── */
-    .sidebar { width:252px; border-left:1px solid var(--border); background:var(--white); display:flex; flex-direction:column; flex-shrink:0; overflow:hidden }
-    .sb-head { padding:8px 11px 7px; font-size:10px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); border-bottom:1px solid var(--border); flex-shrink:0; background:var(--white); display:flex; align-items:center; gap:6px }
-    .sb-clients-count { font-size:10px; font-weight:500; color:var(--accent); background:#eff6ff; border:1px solid #bfdbfe; padding:1px 6px; border-radius:20px; text-transform:none; letter-spacing:0 }
-
-    .sb-list { flex:1; overflow-y:auto; padding:3px 0; min-height:60px }
-    .sb-list::-webkit-scrollbar { width:3px }
-    .sb-list::-webkit-scrollbar-thumb { background:var(--border2); border-radius:3px }
-
-    .log-item { padding:6px 11px; border-bottom:1px solid var(--border); transition:background .1s }
-    .log-item:last-child { border-bottom:none }
-    .log-item:hover { background:#f9fafb }
-    .log-item.is-processed { opacity:.6 }
-    .log-item.is-current { background:#eff6ff; border-left:2px solid var(--accent) }
-    .log-org   { font-size:11px; font-weight:500; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
-    .log-meta  { display:flex; align-items:center; gap:5px; margin-top:2px }
-    .log-badge { font-size:10px; padding:2px 7px; border-radius:20px; font-weight:500 }
-    .log-unproc { font-size:10px; color:var(--muted) }
-    .sb-empty  { padding:18px 11px; font-size:12px; color:var(--muted); text-align:center; line-height:1.6 }
-
-    /* Статистика */
-    .sb-head-stat { border-top:1px solid var(--border); justify-content:space-between }
-    .stat-date-inp { border:1px solid var(--border2); border-radius:5px; font-size:10px; color:var(--text); padding:2px 5px; font-family:inherit; outline:none; background:var(--bg); cursor:pointer; width:94px; text-transform:none; font-weight:400 }
-    .stat-date-inp:focus { border-color:var(--accent) }
-    .sb-stat { flex:none; max-height:200px; overflow-y:auto; padding:5px 0 }
-    .sb-stat::-webkit-scrollbar { width:3px }
-    .sb-stat::-webkit-scrollbar-thumb { background:var(--border2); border-radius:3px }
-    .stat-empty { padding:10px 11px; font-size:11px; color:var(--muted); text-align:center }
-    .stat-row   { display:flex; align-items:center; justify-content:space-between; padding:4px 11px; gap:5px }
-    .stat-row:hover { background:#f9fafb }
-    .stat-label { font-size:11px; color:var(--sec); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
-    .stat-badge { font-size:10px; font-weight:600; padding:2px 7px; border-radius:20px; flex-shrink:0 }
-    .stat-total { border-top:1px solid var(--border); margin-top:2px; padding-top:5px }
-    .stat-total .stat-label { font-weight:600; color:var(--text) }
-    .stat-badge-total { background:#f3f4f6; color:#374151 }
-
-    /* Перезвоны */
-    .sb-head-cb { border-top:1px solid var(--border) }
-    .sb-list-cb { flex:none; max-height:190px; overflow-y:auto }
-    .sb-list-cb::-webkit-scrollbar { width:3px }
-    .sb-list-cb::-webkit-scrollbar-thumb { background:var(--border2); border-radius:3px }
-    .cb-empty   { padding:10px 11px; font-size:11px; color:var(--muted); text-align:center }
-    .cb-item    { padding:6px 8px 6px 11px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:4px; transition:background .1s }
-    .cb-item:hover { background:#f9fafb }
-    .cb-item:last-child { border-bottom:none }
-    .cb-item.cb-past   { border-left:2px solid #dc2626 }
-    .cb-item.cb-soon15 { border-left:2px solid #ca8a04 }
-    .cb-item-body  { display:flex; flex-direction:column; gap:2px; flex:1; min-width:0 }
-    .cb-item-org   { font-size:11px; font-weight:500; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
-    .cb-item-meta  { display:flex; align-items:center; gap:4px }
-    /* дата — тот же стиль что заголовок клиента: 11px, font-weight 500 */
-    .cb-item-time  { font-size:11px; font-weight:500; color:var(--muted) }
-    .cb-item-time.past   { color:#dc2626 }
-    .cb-item-time.soon15 { color:#ca8a04 }
-    .cb-item-st  { font-size:9px; background:#fef9c3; color:#ca8a04; padding:1px 5px; border-radius:8px; white-space:nowrap }
-    /* крестик — просто символ без рамки */
-    .cb-del-btn { background:none; border:none; color:var(--muted); font-size:13px; cursor:pointer; padding:0 3px; line-height:1; opacity:.55; flex-shrink:0 }
-    .cb-del-btn:hover { color:#dc2626; opacity:1 }
-
-    /* ── BOTTOM BAR ── */
-    .bottom { display:flex; align-items:center; gap:10px; padding:9px 16px; background:var(--white); border-top:1px solid var(--border); flex-shrink:0 }
-    .btn-save { display:flex; align-items:center; gap:6px; padding:8px 20px; background:var(--accent); color:#fff; border:none; border-radius:var(--rad); font-size:13px; font-weight:600; cursor:pointer; font-family:inherit; transition:opacity .12s }
-    .btn-save:hover { opacity:.88 }
-    .btn-save:disabled { opacity:.5; cursor:not-allowed }
-    .btn-nav  { padding:8px 14px; background:var(--white); border:1px solid var(--border2); color:var(--sec); border-radius:var(--rad); font-size:13px; cursor:pointer; font-family:inherit; transition:all .12s }
-    .btn-nav:hover:not(:disabled) { border-color:var(--accent); color:var(--accent) }
-    .btn-nav:disabled { opacity:.4; cursor:not-allowed }
-    .progress-txt { font-size:12px; color:var(--muted); margin-left:auto; white-space:nowrap }
-
-    .spin { width:14px; height:14px; border:2px solid rgba(255,255,255,.3); border-top-color:#fff; border-radius:50%; animation:sp .5s linear infinite; display:none }
-    .btn-save.loading .spin  { display:block }
-    .btn-save.loading .save-lbl { display:none }
-    @keyframes sp { to { transform:rotate(360deg) } }
-
-    .status { display:none; align-items:center; gap:6px; font-size:13px; font-weight:500; padding:6px 12px; border-radius:var(--rad) }
-    .status.ok   { display:flex; background:#dcfce7; color:#16a34a }
-    .status.err  { display:flex; background:#fee2e2; color:#dc2626 }
-    .status.load { display:flex; background:#eff6ff; color:var(--accent) }
-
-    /* ── END SCREEN ── */
-    #end-screen { display:none; flex-direction:column; align-items:center; justify-content:center; height:100%; gap:14px; padding:40px; text-align:center }
-    .end-icon  { font-size:52px }
-    .end-title { font-size:20px; font-weight:600 }
-    .end-sub   { font-size:14px; color:var(--sec); max-width:300px; line-height:1.6 }
-    .btn-reload { padding:10px 24px; background:var(--accent); color:#fff; border:none; border-radius:var(--rad); font-size:14px; font-weight:600; cursor:pointer; margin-top:6px }
-  </style>
-</head>
-<body>
-
-<!-- TOPBAR -->
-<div class="topbar">
-  <div class="t-logo">
-    <svg viewBox="0 0 20 20"><path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z"/></svg>
+<div class="page">
+  <div class="topbar">
+    <div class="t-logo"><svg viewBox="0 0 20 20"><path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z"/></svg></div>
+    <div>
+      <div class="t-proj">новый-тест-mquqmf02</div>
+      <div class="t-sub">Карточка клиента</div>
+    </div>
+    <div class="t-right">
+      <div class="t-av">КО</div>
+      <span class="t-name">Коваль</span>
+      <span class="t-badge">17 клиентов</span>
+    </div>
   </div>
-  <div>
-    <div class="t-proj" id="m-proj">Загрузка...</div>
-    <div class="t-sub">Карточка клиента</div>
-  </div>
-  <div class="t-right">
-    <div class="t-av" id="m-av">МН</div>
-    <span class="t-name" id="m-name">Менеджер</span>
-    <span class="t-count" id="m-count">0 сегодня</span>
-  </div>
-</div>
 
-<!-- BODY -->
-<div class="body">
-
-  <!-- FORM -->
-  <div class="form-area">
-    <div id="form-inner">
-
-      <!-- ════ ЛЕВАЯ КОЛОНКА: справочная информация ════ -->
-      <div class="col-left">
-
-        <div class="sect">Организация</div>
-        <div class="fields">
-          <div class="field fw">
-            <label>Наименование <span class="req">*</span></label>
-            <input type="text" id="f-org" placeholder="ООО Красотулька" autocomplete="off">
-          </div>
-        </div>
-        <div class="fields">
-          <div class="field f2">
-            <label>Регион</label>
-            <input type="text" id="f-region" readonly>
-          </div>
-          <div class="field f2">
-            <label>Населённый пункт</label>
-            <input type="text" id="f-city" readonly>
-          </div>
-        </div>
-        <div class="fields">
-          <div class="field fw">
-            <label>Адрес</label>
-            <input type="text" id="f-address" readonly>
-          </div>
-        </div>
-        <div class="fields">
-          <div class="field fw">
-            <label>Рубрика</label>
-            <input type="text" id="f-rubric-txt" readonly>
-          </div>
-        </div>
-        <div class="fields">
-          <div class="field fw">
-            <label>Основной вид деятельности</label>
-            <input type="text" id="f-activity" readonly>
-          </div>
-        </div>
-        <div class="fields">
-          <div class="field fw">
-            <label>Полученные лицензии</label>
-            <input type="text" id="f-licenses" readonly>
-          </div>
-        </div>
-        <div class="fields">
-          <div class="field f2">
-            <label>Предметы закупок (ОКПД2)</label>
-            <input type="text" id="f-okpd2" readonly>
-          </div>
-          <div class="field f2">
-            <label>Лизингополучатель</label>
-            <input type="text" id="f-leasing" readonly>
-          </div>
-        </div>
-
-
-        <div class="divider"></div>
-        <div class="sect">ИИ поиск</div>
-        <div class="ai-stretch-wrap">
-          <div class="ai-stretch-field">
-            <label>AI-заключение</label>
-            <textarea id="f-ai1" readonly></textarea>
-          </div>
-          <div class="ai-stretch-field">
-            <label>AI-заключение 2</label>
-            <textarea id="f-ai2" readonly></textarea>
-          </div>
-        </div>
-
-      </div><!-- /col-left -->
-
-      <!-- ════ ПРАВАЯ КОЛОНКА: рабочая зона менеджера ════ -->
-      <div class="col-right">
-
-        <div class="sect">Контакты</div>
-        <div class="fields">
-          <div class="field f2 tall">
-            <label>Телефон 1 <span class="req">*</span></label>
-            <input type="tel" id="f-phone" placeholder="79001234567">
-          </div>
-          <div class="field f2 tall">
-            <label>Сотовый</label>
-            <input type="tel" id="f-mobile" placeholder="79001234567">
-          </div>
-        </div>
-        <div class="fields">
-          <div class="field f2 tall">
-            <label>Телефон 2</label>
-            <input type="tel" id="f-phone2">
-          </div>
-          <div class="field f2 tall">
-            <label>Телефон 3</label>
-            <input type="tel" id="f-phone3">
-          </div>
-        </div>
-        <div class="fields">
-          <div class="field f2 tall">
-            <label>E-mail</label>
-            <input type="email" id="f-email" placeholder="info@company.ru">
-          </div>
-          <div class="field f2 tall">
-            <label>Сайт</label>
-            <input type="text" id="f-site" readonly>
-          </div>
-          <div class="field f2 tall">
-            <label>Соц. сети</label>
-            <input type="text" id="f-social" readonly>
-          </div>
-        </div>
-
-        <div class="divider"></div>
-        <div class="sect">Информация об ЛПР</div>
-        <div class="fields">
-          <div class="field fw">
-            <label>Имя</label>
-            <input type="text" id="f-lpr-name" placeholder="Татьяна">
-          </div>
-        </div>
-        <div class="fields">
-          <div class="field fw">
-            <label>Телефон ЛПР</label>
-            <input type="tel" id="f-lpr-phone" placeholder="79001234567">
-          </div>
-        </div>
-        <div class="fields">
-          <div class="field fw">
-            <label>Почта ЛПР</label>
-            <input type="email" id="f-lpr-email" placeholder="boss@company.ru">
-          </div>
-        </div>
-
-        <div class="divider"></div>
-        <div class="sect">Результат звонка <span class="req" style="text-transform:none;font-size:10px">*</span></div>
-        <div class="result-row">
-          <button class="rb" data-val="Недозвон"      data-cls="on-nedozv"  onclick="pickResult(this)">Недозвон</button>
-          <button class="rb" data-val="Не компания"   data-cls="on-nekomp"  onclick="pickResult(this)">Не компания</button>
-          <button class="rb" data-val="Не абонент"    data-cls="on-neabon"  onclick="pickResult(this)">Не абонент</button>
-          <button class="rb" data-val="Дубль"         data-cls="on-dubl"    onclick="pickResult(this)">Дубль</button>
-          <button class="rb" data-val="Отказ Сек"     data-cls="on-otsek"   onclick="pickResult(this)">Отказ Сек</button>
-          <button class="rb" data-val="Отказ ЛПР"     data-cls="on-otlpr"   onclick="pickResult(this)">Отказ ЛПР</button>
-          <button class="rb" data-val="КП Сек"        data-cls="on-kpsek"   onclick="pickResult(this)">КП Сек</button>
-          <button class="rb" data-val="КП ЛПР"        data-cls="on-kplpr"   onclick="pickResult(this)">КП ЛПР</button>
-          <button class="rb" data-val="Перезвон Сек"  data-cls="on-perzsek" onclick="pickResult(this)">Перезвон Сек</button>
-          <button class="rb" data-val="Перезвон ЛПР"  data-cls="on-perzlpr" onclick="pickResult(this)">Перезвон ЛПР</button>
-          <button class="rb" data-val="Лид"           data-cls="on-lid"     onclick="pickResult(this)">&#10003; Лид</button>
-        </div>
-
-        <!-- блок перезвона -->
-        <div id="cb-block">
-          <div class="cb-block-title">&#128222; Запланировать перезвон</div>
-          <div style="display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap">
-            <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:180px">
-              <label style="font-size:11px;font-weight:500;color:var(--sec)">Дата и время</label>
-              <input type="datetime-local" id="cb-datetime">
+  <div class="body">
+    <div class="form-area">
+      <div class="form-inner">
+        <div class="col-left">
+          <div class="card-sect">
+            <div class="sect">Организация</div>
+            <div class="fields"><div class="field fw"><label>Наименование <span class="req">*</span></label><input type="text" value="Независимая аналитическая лаборатория"></div></div>
+            <div class="fields">
+              <div class="field f2"><label>Регион</label><input type="text" value="Алтайский край" readonly></div>
+              <div class="field f2"><label>Нас. пункт</label><input type="text" value="Бийск" readonly></div>
             </div>
-            <button class="cb-save-btn" onclick="saveCallback()">Сохранить перезвон</button>
+            <div class="fields"><div class="field fw"><label>Адрес</label><input type="text" value="Василия Шадрина улица, 62" readonly></div></div>
+            <div class="fields"><div class="field fw"><label>Рубрика</label><input type="text" value="Судебная внесудебная экспертиза" readonly></div></div>
+            <div class="fields"><div class="field fw"><label>Основной вид деятельности</label><input type="text" value="71.20 Технические испытания..." readonly></div></div>
+            <div class="fields"><div class="field fw"><label>Полученные лицензии</label><input type="text" value="Деятельность в обл. гидрометеорологии..." readonly></div></div>
+            <div class="fields">
+              <div class="field f2"><label>Предметы закупок (ОКПД2)</label><input type="text" value="—" readonly></div>
+              <div class="field f2"><label>Лизингополучатель</label><input type="text" value="—" readonly></div>
+            </div>
           </div>
-          <div class="cb-block-hint">Перезвон появится в вашем списке задач.</div>
+          <div class="card-sect" style="flex:1;display:flex;flex-direction:column">
+            <div class="sect">ИИ поиск</div>
+            <div class="ai-stretch-wrap">
+              <div class="ai-stretch-field"><label>AI-заключение</label><textarea class="ai-ta" readonly>—</textarea></div>
+              <div class="ai-stretch-field"><label>AI-заключение 2</label><textarea class="ai-ta" readonly>—</textarea></div>
+            </div>
+          </div>
         </div>
 
-        <div class="divider"></div>
-        <div class="sect">Примечание</div>
-        <div class="fields">
-          <div class="field fw">
-            <textarea id="f-note" class="f-note-ta" placeholder="Хочет участвовать, просит прислать ссылку на регистрацию..."></textarea>
+        <div class="col-right">
+          <div class="card-sect">
+            <div class="sect">Контакты</div>
+            <div class="fields">
+              <div class="field f2 tall"><label>Телефон 1 <span class="req">*</span></label><input type="tel" value="+7 (3854) 405–222"></div>
+              <div class="field f2 tall"><label>Сотовый</label><input type="tel" value="—"></div>
+            </div>
+            <div class="fields">
+              <div class="field f2 tall"><label>Телефон 2</label><input type="tel" value="—"></div>
+              <div class="field f2 tall"><label>Телефон 3</label><input type="tel" value="—"></div>
+            </div>
+            <div class="fields">
+              <div class="field f2 tall"><label>E-mail</label><input type="email" value="n.centr@sfonai.ru"></div>
+              <div class="field f2 tall"><label>Сайт</label><input type="text" value="sfonai.ru" readonly></div>
+              <div class="field f2 tall"><label>Соц. сети</label><input type="text" value="—" readonly></div>
+            </div>
+          </div>
+          <div class="card-sect">
+            <div class="sect">Информация об ЛПР</div>
+            <div class="fields"><div class="field fw"><label>Имя</label><input type="text" value="Татьяна"></div></div>
+            <div class="fields"><div class="field fw"><label>Телефон ЛПР</label><input type="tel" value="79001234567"></div></div>
+            <div class="fields"><div class="field fw"><label>Почта ЛПР</label><input type="email" value="boss@company.ru"></div></div>
+          </div>
+          <div class="card-sect">
+            <div class="sect">Результат звонка <span style="text-transform:none;font-size:10px;color:#2563eb">*</span></div>
+            <div class="result-row">
+              <button class="rb">Недозвон</button><button class="rb">Не компания</button><button class="rb">Не абонент</button><button class="rb">Дубль</button>
+              <button class="rb on-otsek">Отказ Сек</button><button class="rb on-otlpr">Отказ ЛПР</button>
+              <button class="rb on-kpsek">КП Сек</button><button class="rb on-kplpr">КП ЛПР</button>
+              <button class="rb on-perzsek">Перезвон Сек</button><button class="rb on-perzlpr">Перезвон ЛПР</button>
+              <button class="rb on-lid">✓ Лид</button>
+            </div>
+          </div>
+          <div class="card-sect">
+            <div class="sect">Примечание</div>
+            <div class="fields"><div class="field fw"><textarea class="f-note" placeholder="Хочет участвовать, просит прислать ссылку..."></textarea></div></div>
           </div>
         </div>
 
-      </div><!-- /col-right -->
-
-      <!-- ════ ТРЕТЬЯ КОЛОНКА: история ════ -->
-      <div class="col-hist">
-        <div class="sect">История коммуникации</div>
-        <div id="hist-items"><div class="hist-empty">Звонков по этому клиенту ещё не было</div></div>
-      </div><!-- /col-hist -->
-
-    </div><!-- /#form-inner -->
-
-    <div id="end-screen">
-      <div class="end-icon">&#9989;</div>
-      <div class="end-title">База закончилась</div>
-      <div class="end-sub">Все номера обработаны. Администратор добавит новые строки — обновите страницу чтобы продолжить.</div>
-      <button class="btn-reload" onclick="location.reload()">Обновить страницу</button>
+        <div class="col-hist">
+          <div class="card-sect">
+            <div class="sect">История коммуникации</div>
+            <div class="hist-item">
+              <div class="hist-row1"><span class="hist-badge" style="background:#fce7f3;color:#be185d">Отказ ЛПР</span><span class="hist-date">26.06.2026 18:06</span></div>
+              <div class="hist-note">фыва</div>
+              <div class="hist-mgr">Коваль</div>
+            </div>
+            <div class="hist-item">
+              <div class="hist-row1"><span class="hist-badge" style="background:#fef9c3;color:#ca8a04">Перезвон Сек</span><span class="hist-date">29.06.2026 19:36</span></div>
+              <div class="hist-note">Повторный звонок запланирован</div>
+              <div class="hist-mgr">Коваль</div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
-  </div><!-- /form-area -->
-
-  <!-- SIDEBAR -->
-  <div class="sidebar">
-    <div class="sb-head">Мои клиенты <span class="sb-clients-count" id="sb-clients-count"></span></div>
-    <div class="sb-list" id="log-list">
-      <div class="sb-empty">Список загружается...</div>
-    </div>
-    <div class="sb-head sb-head-stat">
-      Статистика
-      <input type="date" id="stat-date" class="stat-date-inp" title="Выберите дату">
-    </div>
-    <div class="sb-stat" id="stat-block">
-      <div class="stat-empty">Загрузка...</div>
-    </div>
-    <div class="sb-head sb-head-cb">Перезвоны</div>
-    <div class="sb-list sb-list-cb" id="cb-list">
-      <div class="cb-empty">Загрузка...</div>
+    <div class="sidebar">
+      <div class="sb-head">Мои клиенты <span class="sb-count">17</span></div>
+      <div class="sb-list">
+        <div class="log-item is-processed"><div class="log-org">Управление соц. защиты нас...</div><div class="log-meta"><span class="log-badge" style="background:#fce7f3;color:#be185d">Отказ ЛПР</span></div></div>
+        <div class="log-item is-processed"><div class="log-org">Содружество</div><div class="log-meta"><span class="log-badge" style="background:#f1f5f9;color:#475569">Не компания</span></div></div>
+        <div class="log-item is-processed"><div class="log-org">Маралихинское СельПО</div><div class="log-meta"><span class="log-badge" style="background:#fef9c3;color:#ca8a04">Перезвон ЛПР</span></div></div>
+        <div class="log-item is-processed"><div class="log-org">Центр инженерных технологий</div><div class="log-meta"><span class="log-badge" style="background:#f0fdf4;color:#16a34a">Лид</span></div></div>
+        <div class="log-item is-current"><div class="log-org">Независимая аналит. лаб...</div><div class="log-meta"><span class="log-unproc">не обработан</span></div></div>
+        <div class="log-item"><div class="log-org">Чистоозерное</div><div class="log-meta"><span class="log-unproc">не обработан</span></div></div>
+        <div class="log-item"><div class="log-org">Фапрокс</div><div class="log-meta"><span class="log-unproc">не обработан</span></div></div>
+      </div>
+      <div class="sb-head sb-head-stat">Статистика <input type="date" class="stat-date" value="2026-06-29"></div>
+      <div class="sb-stat">
+        <div class="stat-row"><span class="stat-lbl">Лид</span><span class="stat-num" style="background:#f0fdf4;color:#16a34a">1</span></div>
+        <div class="stat-row"><span class="stat-lbl">Перезвон Сек</span><span class="stat-num" style="background:#fefce8;color:#ca8a04">1</span></div>
+        <div class="stat-row"><span class="stat-lbl">Отказ ЛПР</span><span class="stat-num" style="background:#fce7f3;color:#be185d">1</span></div>
+        <div class="stat-row"><span class="stat-lbl">Недозвон</span><span class="stat-num" style="background:#fff7ed;color:#c2410c">1</span></div>
+        <div class="stat-row stat-total"><span class="stat-lbl">Всего звонков</span><span class="stat-num" style="background:#f1f5f9;color:#334155">4</span></div>
+      </div>
+      <div class="sb-head sb-head-cb">Перезвоны</div>
+      <div class="sb-list-cb">
+        <div class="cb-item cb-past">
+          <div class="cb-item-body"><div class="cb-item-org">Независимая аналит. лаб...</div><div class="cb-item-meta"><span class="cb-item-time past">29.06 21:32</span><span class="cb-item-st">Перезвон Сек</span></div></div>
+          <button class="cb-del-btn">✕</button>
+        </div>
+        <div class="cb-item cb-soon15">
+          <div class="cb-item-body"><div class="cb-item-org">Фапрокс</div><div class="cb-item-meta"><span class="cb-item-time soon15">29.06 22:36</span><span class="cb-item-st">Перезвон Сек</span></div></div>
+          <button class="cb-del-btn">✕</button>
+        </div>
+      </div>
     </div>
   </div>
 
-</div><!-- /body -->
-
-<!-- BOTTOM BAR -->
-<div class="bottom">
-  <button class="btn-nav" id="btn-prev-nav" onclick="goPrev()" disabled>&#8592; Предыдущий</button>
-  <button class="btn-save" id="btn-save" onclick="saveClient()">
-    <div class="spin"></div>
-    <span class="save-lbl">Сохранить результат</span>
-  </button>
-  <button class="btn-nav" id="btn-next-nav" onclick="goNext()">Следующий &#8594;</button>
-  <div class="status" id="status"><span id="s-text"></span></div>
-  <span class="progress-txt" id="m-progress"></span>
+  <div class="bottom">
+    <button class="btn-nav">← Предыдущий</button>
+    <button class="btn-save">Сохранить результат</button>
+    <button class="btn-nav">Следующий →</button>
+    <span class="progress-txt">8 / 17 · обработано: 11</span>
+  </div>
 </div>
-
-<script>
-window.onerror = function(msg, src, line, col, err) {
-  console.error('GLOBAL ERROR:', msg, 'line:', line, 'col:', col);
-  if (err && err.stack) console.error('STACK:', err.stack);
-};
-window._selectedResult = '';
-const BADGE_STYLES = {
-  'Недозвон':     'background:#ffedd5;color:#c2410c',
-  'Не компания':  'background:#f3f4f6;color:#374151',
-  'Не абонент':   'background:#f3f4f6;color:#374151',
-  'Дубль':        'background:#f3f4f6;color:#374151',
-  'Отказ Сек':    'background:#fee2e2;color:#dc2626',
-  'Отказ ЛПР':    'background:#fce7f3;color:#be185d',
-  'КП Сек':       'background:#eff6ff;color:#1d4ed8',
-  'КП ЛПР':       'background:#eef2ff;color:#4338ca',
-  'Перезвон Сек': 'background:#fef9c3;color:#ca8a04',
-  'Перезвон ЛПР': 'background:#fefce8;color:#a16207',
-  'Лид':          'background:#dcfce7;color:#16a34a',
-};
-
-function pickResult(btn) {
-  document.querySelectorAll('.rb').forEach(b => b.className = 'rb');
-  btn.classList.add(btn.dataset.cls);
-  window._selectedResult = btn.dataset.val;
-  const isCallback = ['Перезвон Сек', 'Перезвон ЛПР'].includes(btn.dataset.val);
-  const block = document.getElementById('cb-block');
-  if (block) block.style.display = isCallback ? 'flex' : 'none';
-  if (isCallback) {
-    const dt = document.getElementById('cb-datetime');
-    if (dt && !dt.value) {
-      const d = new Date(Date.now() + 3600000);
-      const pad = n => String(n).padStart(2,'0');
-      dt.value = d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate())
-               + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
-    }
-  }
-}
-
-function clearFormFields() {
-  ['f-org','f-phone','f-mobile','f-email','f-region','f-city','f-address',
-   'f-lpr-name','f-lpr-phone','f-lpr-email','f-note',
-   'f-site','f-ai1','f-ai2','f-social','f-rubric-txt','f-activity',
-   'f-licenses','f-okpd2','f-leasing','f-phone2','f-phone3'
-  ].forEach(id => {
-    try { const e = document.getElementById(id); if (e && e.value !== undefined) e.value = ''; } catch(ex) {}
-  });
-  document.querySelectorAll('.rb').forEach(b => b.className = 'rb');
-  window._selectedResult = '';
-  const block = document.getElementById('cb-block');
-  if (block) block.style.display = 'none';
-  const dt = document.getElementById('cb-datetime');
-  if (dt) dt.value = '';
-}
-
-function setBtnLoad(on) {
-  const btn = document.getElementById('btn-save');
-  btn.disabled = on;
-  btn.classList.toggle('loading', on);
-}
-
-function showStatus(type, msg) {
-  const el = document.getElementById('status');
-  el.className = 'status ' + type;
-  document.getElementById('s-text').textContent = msg;
-  if (type === 'ok') setTimeout(hideStatus, 5000);
-}
-
-function hideStatus() { document.getElementById('status').className = 'status'; }
-function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-</script>
-</body>
-</html>
