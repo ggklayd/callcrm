@@ -227,15 +227,25 @@
       }
       const now = new Date();
       wrap.innerHTML = cbs.map((cb, idx) => {
-        const d       = cb.callbackAt?.toDate ? cb.callbackAt.toDate() : new Date(cb.callbackAt);
-        const isPast  = d < now;
-        const dateStr = d.toLocaleDateString('ru-RU', {day:'2-digit', month:'2-digit'});
-        const timeStr = d.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
-        return '<div class="cb-item ' + (isPast ? 'cb-past' : '') + '">'
+        const d        = cb.callbackAt?.toDate ? cb.callbackAt.toDate() : new Date(cb.callbackAt);
+        const diffMs   = d - now;
+        const diffMin  = diffMs / 60000;
+        const isPast   = diffMs < 0;
+        const isSoon5  = !isPast && diffMin <= 5;
+        const isSoon15 = !isPast && diffMin <= 15 && diffMin > 5;
+        const dateStr  = d.toLocaleDateString('ru-RU', {day:'2-digit', month:'2-digit'});
+        const timeStr  = d.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
+
+        // Класс для левой черты карточки
+        const itemCls = isPast || isSoon5 ? 'cb-past' : (isSoon15 ? 'cb-soon15' : '');
+        // Класс для текста времени
+        const timeCls = isPast || isSoon5 ? 'past' : (isSoon15 ? 'soon15' : '');
+
+        return '<div class="cb-item ' + itemCls + '">'
           + '<div class="cb-item-body" onclick="goToCallback(' + idx + ')" style="flex:1;cursor:pointer;min-width:0">'
           +   '<div class="cb-item-org">' + esc2(cb.org_name || '—') + '</div>'
           +   '<div class="cb-item-meta">'
-          +     '<span class="cb-item-time ' + (isPast?'past':'') + '">' + dateStr + ' ' + timeStr + '</span>'
+          +     '<span class="cb-item-time ' + timeCls + '">' + dateStr + ' ' + timeStr + '</span>'
           +     '<span class="cb-item-st">' + esc2(cb.lastResult || '') + '</span>'
           +   '</div>'
           + '</div>'
@@ -243,6 +253,11 @@
           + '</div>';
       }).join('');
     };
+
+    // Перерисовываем перезвоны каждую минуту чтобы цвета обновлялись
+    setInterval(function() {
+      if (window._callbacks && window._callbacks.length) window.renderCallbacks();
+    }, 60000);
 
     // ── Удаление перезвона с подтверждением ───────────────────────
     window.confirmDeleteCallback = function(cbId, orgName) {
@@ -707,13 +722,15 @@
     .cb-item:hover{background:#f9fafb}
     .cb-item:last-child{border-bottom:none}
     .cb-item.cb-past{border-left:2px solid #dc2626}
+    .cb-item.cb-soon15{border-left:2px solid #ca8a04}
     .cb-item-body{display:flex;flex-direction:column;gap:2px}
     .cb-del-btn{background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;padding:2px 4px;border-radius:4px;flex-shrink:0;transition:all .1s;line-height:1}
     .cb-del-btn:hover{color:#dc2626;background:#fee2e2}
     .cb-item-org{font-size:12px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .cb-item-meta{display:flex;align-items:center;justify-content:space-between;margin-top:2px}
     .cb-item-time{font-size:11px;color:var(--muted)}
-    .cb-item-time.past{color:#dc2626;font-weight:500}
+    .cb-item-time.past{color:#dc2626;font-weight:600}
+    .cb-item-time.soon15{color:#ca8a04;font-weight:600}
     .cb-item-st{font-size:10px;background:#fef9c3;color:#ca8a04;padding:1px 6px;border-radius:10px;white-space:nowrap}
 
     /* BOTTOM BAR */
