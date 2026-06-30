@@ -133,14 +133,56 @@
         }
       });
       if (!total) { wrap.innerHTML = '<div class="stat-empty">Нет звонков за ' + ddmmyyyy + '</div>'; return; }
-      const ORDER = ['Лид','КП ЛПР','КП Сек','Перезвон ЛПР','Перезвон Сек','Отказ ЛПР','Отказ Сек','Недозвон','Дубль','Не абонент','Не компания'];
+
+      // ── Обработанные компании ──────────────────────────────────
+      // Считаем по Результату 1 за выбранную дату, у которого статус
+      // входит в список "обработанных", и который не отменён последующей
+      // пометкой "Не компания" / "Частное лицо" в попытках 2-6
+      const PROCESSED_STATUSES = ['Отказ Сек','Отказ ЛПР','КП Сек','КП ЛПР','Перезвон Сек','Перезвон ЛПР','Лид'];
+      const CALLBACK_STATUSES  = ['Перезвон Сек','Перезвон ЛПР'];
+      const VOID_STATUSES      = ['Не компания','Частное лицо'];
+      let processedCompanies = 0;
+
+      clients.forEach(c => {
+        const result1 = c.result1 || '';
+        const date1   = c.date1   || '';
+        if (!result1 || !date1) return;
+        if (!PROCESSED_STATUSES.includes(result1)) return;
+
+        let date1Norm = '';
+        const d1Val = date1 instanceof Date ? date1 : (typeof date1 === 'string' ? date1.trim() : String(date1).trim());
+        if (d1Val instanceof Date || (typeof d1Val === 'string' && d1Val.match(/^\d{4}-/))) {
+          const dt = new Date(d1Val);
+          if (!isNaN(dt)) {
+            const pad = n => String(n).padStart(2,'0');
+            date1Norm = pad(dt.getDate()) + '.' + pad(dt.getMonth()+1) + '.' + dt.getFullYear();
+          }
+        } else {
+          date1Norm = d1Val.replace(/(\d{2})\.(\d{2})\.(\d{4}).*/, '$1.$2.$3');
+        }
+        if (date1Norm !== ddmmyyyy) return;
+
+        // Шаг 2: если результат1 — перезвон, проверяем что 2-6 попытки
+        // не содержат "Не компания" / "Частное лицо"
+        if (CALLBACK_STATUSES.includes(result1)) {
+          for (let i = 2; i <= 6; i++) {
+            const ri = c['result' + i] || '';
+            if (VOID_STATUSES.includes(ri)) return;
+          }
+        }
+
+        processedCompanies++;
+      });
+
+      const ORDER = ['Лид','КП ЛПР','КП Сек','Перезвон ЛПР','Перезвон Сек','Отказ ЛПР','Отказ Сек','Недозвон','Дубль','Не абонент','Не компания','Частное лицо'];
       const rows = ORDER.filter(s => counts[s]).map(s => ({ s, n: counts[s] }));
       Object.keys(counts).filter(s => !ORDER.includes(s)).forEach(s => rows.push({ s, n: counts[s] }));
       wrap.innerHTML = rows.map(r => {
         const style = BADGE_STYLES[r.s] || 'background:#f3f4f6;color:#374151';
         return '<div class="stat-row"><span class="stat-label">' + esc(r.s) + '</span><span class="stat-badge" style="' + style + '">' + r.n + '</span></div>';
       }).join('')
-      + '<div class="stat-row stat-total"><span class="stat-label">Всего звонков</span><span class="stat-badge stat-badge-total">' + total + '</span></div>';
+      + '<div class="stat-row stat-total"><span class="stat-label">Всего звонков</span><span class="stat-badge stat-badge-total">' + total + '</span></div>'
+      + '<div class="stat-row stat-total"><span class="stat-label">Обработанные компании</span><span class="stat-badge stat-badge-total">' + processedCompanies + '</span></div>';
     }
 
     async function loadTodayHistory() { /* клиенты рендерятся из _allClients */ }
@@ -329,6 +371,7 @@
         'Отказ ЛПР':     'background:#fce7f3;color:#be185d',
         'Недозвон':      'background:#ffedd5;color:#c2410c',
         'Не компания':   'background:#f3f4f6;color:#374151',
+        'Частное лицо':  'background:#f3f4f6;color:#374151',
         'Не абонент':    'background:#f3f4f6;color:#374151',
         'Дубль':         'background:#f3f4f6;color:#374151',
       };
@@ -514,7 +557,7 @@ body{display:flex;flex-direction:column;height:100vh;overflow:hidden;background:
 .form-area{flex:1;overflow-y:auto;padding:24px 18px 32px;background:#f0f2f5}
 .form-area::-webkit-scrollbar{width:4px}
 .form-area::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:4px}
-#form-inner{display:flex;gap:16px;align-items:flex-start}
+#form-inner{display:flex;gap:16px;align-items:stretch;min-height:calc(100vh - 56px - 64px)}
 .col-left{display:flex;flex-direction:column;gap:0;width:400px;flex-shrink:0}
 .col-right{display:flex;flex-direction:column;gap:0;width:480px;flex-shrink:0}
 .col-hist{display:flex;flex-direction:column;gap:0;width:260px;flex-shrink:0;padding-top:60px}
@@ -551,6 +594,7 @@ input[readonly],textarea[readonly]{background:#f8fafc;color:#64748b;border-color
 .rb:hover{border-color:#94a3b8;color:#334155;transform:translateY(-1px)}
 .rb.on-nedozv {background:#fff7ed;border-color:#fdba74;color:#c2410c}
 .rb.on-nekomp {background:#f1f5f9;border-color:#cbd5e1;color:#475569}
+.rb.on-fizlico{background:#f1f5f9;border-color:#cbd5e1;color:#475569}
 .rb.on-neabon {background:#f1f5f9;border-color:#cbd5e1;color:#475569}
 .rb.on-dubl   {background:#f1f5f9;border-color:#cbd5e1;color:#475569}
 .rb.on-otsek  {background:#fef2f2;border-color:#fca5a5;color:#dc2626}
@@ -753,11 +797,11 @@ input[readonly],textarea[readonly]{background:#f8fafc;color:#64748b;border-color
           <div class="fields"><div class="field fw"><label>Почта ЛПР</label><input type="email" id="f-lpr-email" placeholder="boss@company.ru"></div></div>
         </div>
 
-        <div class="card-sect">
+        <div class="card-sect" style="flex:1;display:flex;flex-direction:column">
           <div class="sect">Примечание</div>
-          <div class="fields">
-            <div class="field fw">
-              <textarea id="f-note" class="f-note-ta" placeholder="Хочет участвовать, просит прислать ссылку на регистрацию..."></textarea>
+          <div class="fields" style="flex:1;margin-bottom:0;min-height:0">
+            <div class="field fw" style="height:100%;min-height:0">
+              <textarea id="f-note" class="f-note-ta" placeholder="Хочет участвовать, просит прислать ссылку на регистрацию..." style="height:100%;min-height:80px"></textarea>
             </div>
           </div>
         </div>
@@ -770,6 +814,7 @@ input[readonly],textarea[readonly]{background:#f8fafc;color:#64748b;border-color
           <div class="result-row">
             <button class="rb" data-val="Недозвон"      data-cls="on-nedozv"  onclick="pickResult(this)">Недозвон</button>
             <button class="rb" data-val="Не компания"   data-cls="on-nekomp"  onclick="pickResult(this)">Не компания</button>
+            <button class="rb" data-val="Частное лицо"  data-cls="on-fizlico" onclick="pickResult(this)">Частное лицо</button>
             <button class="rb" data-val="Не абонент"    data-cls="on-neabon"  onclick="pickResult(this)">Не абонент</button>
             <button class="rb" data-val="Дубль"         data-cls="on-dubl"    onclick="pickResult(this)">Дубль</button>
             <button class="rb" data-val="Отказ Сек"     data-cls="on-otsek"   onclick="pickResult(this)">Отказ Сек</button>
@@ -850,6 +895,7 @@ window._selectedResult = '';
 const BADGE_STYLES = {
   'Недозвон':     'background:#ffedd5;color:#c2410c',
   'Не компания':  'background:#f3f4f6;color:#374151',
+  'Частное лицо': 'background:#f3f4f6;color:#374151',
   'Не абонент':   'background:#f3f4f6;color:#374151',
   'Дубль':        'background:#f3f4f6;color:#374151',
   'Отказ Сек':    'background:#fee2e2;color:#dc2626',
