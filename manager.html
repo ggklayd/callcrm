@@ -66,8 +66,9 @@
         const style = BADGE_STYLES[lastResult] || '';
         const isProc = c.status === 'обработан';
         const isCur  = idx === window._currentIdx;
-        return '<div class="log-item' + (isProc ? ' is-processed' : '') + (isCur ? ' is-current' : '') + '" onclick="sidebarGoTo(' + idx + ')" style="cursor:pointer" title="Перейти к карточке">'
-          + '<div class="log-org">' + esc(c.org_name || '—') + '</div>'
+        return '<div class="log-item' + (isProc ? ' is-processed' : '') + (isCur ? ' is-current' : '') + '" onclick="sidebarGoTo(' + idx + ')" style="cursor:pointer;position:relative" title="Перейти к карточке">'
+          + '<span class="log-rownum">№' + (c.rowNum || '—') + '</span>'
+          + '<div class="log-org" style="padding-right:38px">' + esc(c.org_name || '—') + '</div>'
           + '<div class="log-meta">'
           + (lastResult ? '<span class="log-badge" style="' + style + '">' + esc(lastResult) + '</span>' : '<span class="log-unproc">не обработан</span>')
           + '</div>'
@@ -739,6 +740,7 @@ input[readonly],textarea[readonly]{background:#f8fafc;color:#64748b;border-color
 .log-item.is-current{background:#eff6ff;border-left:3px solid #2563eb}
 .log-item.is-processed{opacity:.55}
 .log-org{font-size:12px;font-weight:600;color:#0f172a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.log-rownum{position:absolute;top:7px;right:10px;font-size:9px;font-weight:500;color:#94a3b8;background:#f8fafc;padding:1px 6px;border-radius:20px;white-space:nowrap}
 .log-meta{display:flex;align-items:center;gap:5px;margin-top:3px}
 .log-badge{font-size:10px;padding:2px 8px;border-radius:20px;font-weight:600}
 .log-unproc{font-size:10px;color:#94a3b8}
