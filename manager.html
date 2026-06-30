@@ -320,6 +320,9 @@
       if (!c) return;
       window._currentSheetRow = c.rowNum;
       window._currentIdx      = idx;
+      window._editingAttempt  = null;
+      const updateBar = document.getElementById('update-info-bar');
+      if (updateBar) updateBar.remove();
       setF('f-org',       c.org_name);
       setF('f-phone',     c.phone1);
       setF('f-mobile',    c.mobile);
@@ -390,7 +393,7 @@
       wrap.innerHTML = attempts.reverse().map(a => {
         const bStyle  = BADGE_COLORS[a.result] || 'background:#f3f4f6;color:#6b7280';
         const dateStr = [a.date, a.time].filter(Boolean).join(' ') || '—';
-        return '<div class="hist-item">'
+        return '<div class="hist-item hist-item-click" data-num="' + a.num + '" onclick="loadHistoryAttempt(' + a.num + ')" style="cursor:pointer" title="Нажмите, чтобы отредактировать данные ЛПР и примечание этого этапа">'
           + '<div class="hist-row1">'
           +   '<span class="hist-badge" style="' + bStyle + '">' + esc(a.result) + '</span>'
           +   '<span class="hist-date">' + esc(dateStr) + '</span>'
@@ -400,6 +403,93 @@
           + '</div>';
       }).join('');
     }
+
+    // ── Клик по записи истории: заполняем поля ЛПР и Примечание ──
+    // данными ИМЕННО этой попытки, и переключаем кнопку сохранения
+    // в режим "Обновить данные" (без создания новой попытки)
+    window.loadHistoryAttempt = function(attemptNum) {
+      const c = window._allClients[window._currentIdx];
+      if (!c) return;
+      window._editingAttempt = attemptNum;
+
+      setF('f-lpr-name',  c.lpr_name);
+      setF('f-lpr-phone', c.lpr_phone);
+      setF('f-lpr-email', c.lpr_email);
+      setF('f-note', c['note' + attemptNum] || '');
+
+      // Подсвечиваем выбранную карточку истории
+      document.querySelectorAll('.hist-item-click').forEach(el => {
+        el.classList.toggle('hist-item-active', el.dataset.num == attemptNum);
+      });
+
+      showUpdateInfoBar(attemptNum);
+    };
+
+    function showUpdateInfoBar(attemptNum) {
+      let bar = document.getElementById('update-info-bar');
+      if (!bar) {
+        bar = document.createElement('div');
+        bar.id = 'update-info-bar';
+        bar.style.cssText = 'display:flex;align-items:center;gap:8px;background:#eff6ff;border:1.5px solid #93c5fd;border-radius:9px;padding:10px 14px;margin-top:8px';
+        const lprBlock = document.getElementById('f-lpr-name').closest('.card-sect');
+        lprBlock.appendChild(bar);
+      }
+      bar.innerHTML =
+        '<span style="font-size:12px;color:#1d4ed8;flex:1">Редактирование этапа ' + attemptNum + ': меняются только ЛПР и примечание, статус и дата не изменятся</span>'
+        + '<button class="cb-save-btn" style="background:#2563eb;margin-top:0" onclick="updateClientInfo()">Обновить данные</button>'
+        + '<button class="btn-nav" style="padding:6px 12px;font-size:12px" onclick="cancelEditAttempt()">Отмена</button>';
+    }
+
+    window.cancelEditAttempt = function() {
+      window._editingAttempt = null;
+      const bar = document.getElementById('update-info-bar');
+      if (bar) bar.remove();
+      document.querySelectorAll('.hist-item-click').forEach(el => el.classList.remove('hist-item-active'));
+      const c = window._allClients[window._currentIdx];
+      if (c) {
+        setF('f-lpr-name',  c.lpr_name);
+        setF('f-lpr-phone', c.lpr_phone);
+        setF('f-lpr-email', c.lpr_email);
+        setF('f-note', '');
+      }
+    };
+
+    // ── Обновить ЛПР + примечание конкретной попытки, без создания записи
+    window.updateClientInfo = async function() {
+      const attemptNum = window._editingAttempt;
+      if (!attemptNum) return;
+      const c = window._allClients[window._currentIdx];
+      if (!c || !c.rowNum) { showStatus('err', 'Не удалось определить строку клиента'); return; }
+
+      const lprName  = gv('f-lpr-name').trim();
+      const lprPhone = gv('f-lpr-phone').trim();
+      const lprEmail = gv('f-lpr-email').trim();
+      const note     = gv('f-note').trim();
+
+      try {
+        const sid = window._spreadsheetId ? '&spreadsheetId=' + window._spreadsheetId : '';
+        const url = WEBHOOK + '?action=updateClientInfo&row=' + c.rowNum
+          + '&attempt=' + attemptNum
+          + '&lpr_name='  + encodeURIComponent(lprName)
+          + '&lpr_phone=' + encodeURIComponent(lprPhone)
+          + '&lpr_email=' + encodeURIComponent(lprEmail)
+          + '&note='      + encodeURIComponent(note)
+          + sid;
+        await fetch(url, { mode: 'no-cors' });
+
+        // Обновляем локальный массив, чтобы интерфейс сразу отразил изменения
+        c.lpr_name  = lprName;
+        c.lpr_phone = lprPhone;
+        c.lpr_email = lprEmail;
+        c['note' + attemptNum] = note;
+
+        showStatus('ok', 'Данные ЛПР и примечание обновлены');
+        cancelEditAttempt();
+        renderCardHistory(c);
+      } catch (err) {
+        showStatus('err', 'Ошибка обновления: ' + err.message);
+      }
+    };
 
     window.saveCallback = async function() {
       const dt = document.getElementById('cb-datetime');
@@ -626,6 +716,8 @@ input[readonly],textarea[readonly]{background:#f8fafc;color:#64748b;border-color
 
 /* ИСТОРИЯ */
 .hist-item{display:flex;flex-direction:column;gap:3px;padding:10px 12px;background:#fff;border:1px solid #e8eaed;border-radius:10px;margin-bottom:6px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.hist-item-click:hover{border-color:#93c5fd;box-shadow:0 1px 4px rgba(37,99,235,.12)}
+.hist-item-active{border-color:#2563eb;border-width:1.5px;background:#f8fafc}
 .hist-item:last-child{margin-bottom:0}
 .hist-row1{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .hist-badge{font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;white-space:nowrap}
@@ -947,6 +1039,9 @@ function clearFormFields() {
   });
   document.querySelectorAll('.rb').forEach(b => b.className = 'rb');
   window._selectedResult = '';
+  window._editingAttempt = null;
+  const updateBar = document.getElementById('update-info-bar');
+  if (updateBar) updateBar.remove();
   const block = document.getElementById('cb-block');
   if (block) block.style.display = 'none';
   const dt = document.getElementById('cb-datetime');
