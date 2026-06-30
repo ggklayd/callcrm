@@ -135,43 +135,55 @@
       if (!total) { wrap.innerHTML = '<div class="stat-empty">Нет звонков за ' + ddmmyyyy + '</div>'; return; }
 
       // ── Обработанные компании ──────────────────────────────────
-      // Считаем по Результату 1 за выбранную дату, у которого статус
-      // входит в список "обработанных", и который не отменён последующей
-      // пометкой "Не компания" / "Частное лицо" в попытках 2-6
+      // Проверяем все попытки 1-6 каждого клиента. Засчитываем попытку
+      // если её статус входит в "обработанные" и дата совпадает с выбранной.
+      // Если эта попытка — Перезвон Сек/ЛПР, дальнейшие попытки (после неё)
+      // проверяются на "Не компания"/"Частное лицо" — если найдено, эта
+      // конкретная попытка отменяется (но не блокирует другие попытки той
+      // же строки). Каждая строка засчитывается максимум один раз.
       const PROCESSED_STATUSES = ['Отказ Сек','Отказ ЛПР','КП Сек','КП ЛПР','Перезвон Сек','Перезвон ЛПР','Лид'];
       const CALLBACK_STATUSES  = ['Перезвон Сек','Перезвон ЛПР'];
       const VOID_STATUSES      = ['Не компания','Частное лицо'];
+
+      function normDate(val) {
+        if (!val) return '';
+        const v = val instanceof Date ? val : (typeof val === 'string' ? val.trim() : String(val).trim());
+        if (v instanceof Date || (typeof v === 'string' && v.match(/^\d{4}-/))) {
+          const dt = new Date(v);
+          if (!isNaN(dt)) {
+            const pad = n => String(n).padStart(2,'0');
+            return pad(dt.getDate()) + '.' + pad(dt.getMonth()+1) + '.' + dt.getFullYear();
+          }
+          return '';
+        }
+        return v.replace(/(\d{2})\.(\d{2})\.(\d{4}).*/, '$1.$2.$3');
+      }
+
       let processedCompanies = 0;
 
       clients.forEach(c => {
-        const result1 = c.result1 || '';
-        const date1   = c.date1   || '';
-        if (!result1 || !date1) return;
-        if (!PROCESSED_STATUSES.includes(result1)) return;
+        let counted = false;
+        for (let i = 1; i <= 6 && !counted; i++) {
+          const result = c['result' + i] || '';
+          const date   = c['date'   + i] || '';
+          if (!result || !date) continue;
+          if (!PROCESSED_STATUSES.includes(result)) continue;
+          if (normDate(date) !== ddmmyyyy) continue;
 
-        let date1Norm = '';
-        const d1Val = date1 instanceof Date ? date1 : (typeof date1 === 'string' ? date1.trim() : String(date1).trim());
-        if (d1Val instanceof Date || (typeof d1Val === 'string' && d1Val.match(/^\d{4}-/))) {
-          const dt = new Date(d1Val);
-          if (!isNaN(dt)) {
-            const pad = n => String(n).padStart(2,'0');
-            date1Norm = pad(dt.getDate()) + '.' + pad(dt.getMonth()+1) + '.' + dt.getFullYear();
+          // Если это перезвон — проверяем последующие попытки (после i)
+          // на "Не компания"/"Частное лицо"
+          if (CALLBACK_STATUSES.includes(result)) {
+            let voided = false;
+            for (let j = i + 1; j <= 6; j++) {
+              const rj = c['result' + j] || '';
+              if (VOID_STATUSES.includes(rj)) { voided = true; break; }
+            }
+            if (voided) continue;
           }
-        } else {
-          date1Norm = d1Val.replace(/(\d{2})\.(\d{2})\.(\d{4}).*/, '$1.$2.$3');
-        }
-        if (date1Norm !== ddmmyyyy) return;
 
-        // Шаг 2: если результат1 — перезвон, проверяем что 2-6 попытки
-        // не содержат "Не компания" / "Частное лицо"
-        if (CALLBACK_STATUSES.includes(result1)) {
-          for (let i = 2; i <= 6; i++) {
-            const ri = c['result' + i] || '';
-            if (VOID_STATUSES.includes(ri)) return;
-          }
+          counted = true;
         }
-
-        processedCompanies++;
+        if (counted) processedCompanies++;
       });
 
       const ORDER = ['Лид','КП ЛПР','КП Сек','Перезвон ЛПР','Перезвон Сек','Отказ ЛПР','Отказ Сек','Недозвон','Дубль','Не абонент','Не компания','Частное лицо'];
