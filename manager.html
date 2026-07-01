@@ -184,11 +184,17 @@
       const ORDER = ['Лид','КП ЛПР','КП Сек','Перезвон ЛПР','Перезвон Сек','Отказ ЛПР','Отказ Сек','Недозвон','Дубль','Не абонент','Не компания','Частное лицо'];
       const rows = ORDER.filter(s => counts[s]).map(s => ({ s, n: counts[s] }));
       Object.keys(counts).filter(s => !ORDER.includes(s)).forEach(s => rows.push({ s, n: counts[s] }));
+
+      // «Всего диалогов» — сумма попыток с «качественными» статусами за дату
+      const DIALOG_STATUSES = ['Отказ Сек','Отказ ЛПР','КП Сек','КП ЛПР','Перезвон Сек','Перезвон ЛПР','Лид'];
+      const totalDialogs = DIALOG_STATUSES.reduce((sum, s) => sum + (counts[s] || 0), 0);
+
       wrap.innerHTML = rows.map(r => {
         const style = BADGE_STYLES[r.s] || 'background:#f3f4f6;color:#374151';
         return '<div class="stat-row"><span class="stat-label">' + esc(r.s) + '</span><span class="stat-badge" style="' + style + '">' + r.n + '</span></div>';
       }).join('')
       + '<div class="stat-row stat-total"><span class="stat-label">Всего звонков</span><span class="stat-badge stat-badge-total">' + total + '</span></div>'
+      + '<div class="stat-row stat-total"><span class="stat-label">Всего диалогов</span><span class="stat-badge stat-badge-total">' + totalDialogs + '</span></div>'
       + '<div class="stat-row stat-total"><span class="stat-label">Обработанные компании</span><span class="stat-badge stat-badge-total">' + processedCompanies + '</span></div>';
     }
 
