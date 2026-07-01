@@ -441,6 +441,52 @@
         + '<button class="btn-nav" style="padding:6px 12px;font-size:12px" onclick="cancelEditAttempt()">Отмена</button>';
     }
 
+    // ── Поиск по номеру строки таблицы ───────────────────────────
+    window.sbRowInputChange = function(val) {
+      const btn  = document.getElementById('sb-row-btn');
+      const hint = document.getElementById('sb-row-hint');
+      const num  = parseInt(val);
+      if (!val || isNaN(num) || num < 2) {
+        btn.style.display  = 'none';
+        hint.textContent   = '';
+        return;
+      }
+      // Ищем клиента с таким rowNum
+      const clients = window._allClients || [];
+      const idx = clients.findIndex(c => c.rowNum === num);
+      btn.style.display = 'block';
+      if (idx >= 0) {
+        hint.textContent = '→ ' + (clients[idx].org_name || '—');
+        hint.style.color = '#2563eb';
+      } else {
+        hint.textContent = 'Строка не найдена в списке';
+        hint.style.color = '#94a3b8';
+      }
+    };
+
+    window.sbRowGo = function() {
+      const inp  = document.getElementById('sb-row-input');
+      const hint = document.getElementById('sb-row-hint');
+      const num  = parseInt(inp.value);
+      if (!num || num < 2) return;
+      const clients = window._allClients || [];
+      const idx = clients.findIndex(c => c.rowNum === num);
+      if (idx < 0) {
+        hint.textContent = 'Строка №' + num + ' не найдена';
+        hint.style.color = '#dc2626';
+        return;
+      }
+      showCard(idx);
+      hideStatus();
+      // Прокручиваем сайдбар к найденной карточке
+      const items = document.querySelectorAll('#log-list .log-item');
+      if (items[idx]) items[idx].scrollIntoView({ block: 'nearest' });
+      // Сбрасываем поле
+      inp.value = '';
+      document.getElementById('sb-row-btn').style.display = 'none';
+      hint.textContent = '';
+    };
+
     window.cancelEditAttempt = function() {
       window._editingAttempt = null;
       const bar = document.getElementById('update-info-bar');
@@ -730,6 +776,13 @@ input[readonly],textarea[readonly]{background:#f8fafc;color:#64748b;border-color
 /* SIDEBAR */
 .sidebar{width:240px;border-left:1px solid #e8eaed;background:#fff;display:flex;flex-direction:column;flex-shrink:0;overflow:hidden}
 .sb-head{padding:9px 12px 8px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#94a3b8;border-bottom:1px solid #f1f5f9;flex-shrink:0;display:flex;align-items:center;gap:6px;background:#fff}
+.sb-row-search{display:flex;gap:5px;padding:6px 10px;border-bottom:1px solid #f1f5f9;flex-shrink:0;background:#fff;align-items:center}
+.sb-row-inp{flex:1;height:26px;border:1.5px solid #e2e8f0;border-radius:7px;font-size:11px;padding:0 7px;outline:none;font-family:inherit;color:#0f172a;background:#f8fafc;min-width:0}
+.sb-row-inp:focus{border-color:#2563eb;background:#fff}
+.sb-row-inp::-webkit-outer-spin-button,.sb-row-inp::-webkit-inner-spin-button{-webkit-appearance:none}
+.sb-row-btn{height:26px;padding:0 10px;background:#2563eb;color:#fff;border:none;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;font-family:inherit;flex-shrink:0}
+.sb-row-btn:hover{opacity:.88}
+.sb-row-hint{font-size:10px;padding:0 10px 5px;color:#94a3b8;flex-shrink:0;min-height:0;background:#fff}
 .sb-clients-count{font-size:10px;font-weight:700;color:#2563eb;background:#eff6ff;border:1.5px solid #bfdbfe;padding:1px 7px;border-radius:20px;text-transform:none;letter-spacing:0}
 .sb-list{flex:1;overflow-y:auto;padding:4px 0;min-height:60px}
 .sb-list::-webkit-scrollbar{width:3px}
@@ -964,6 +1017,11 @@ input[readonly],textarea[readonly]{background:#f8fafc;color:#64748b;border-color
   <!-- SIDEBAR -->
   <div class="sidebar">
     <div class="sb-head">Мои клиенты <span class="sb-clients-count" id="sb-clients-count"></span></div>
+    <div class="sb-row-search">
+      <input type="number" id="sb-row-input" class="sb-row-inp" placeholder="№ строки..." min="2" oninput="sbRowInputChange(this.value)" onkeydown="if(event.key==='Enter')sbRowGo()">
+      <button id="sb-row-btn" class="sb-row-btn" onclick="sbRowGo()" style="display:none">Перейти</button>
+    </div>
+    <div id="sb-row-hint" class="sb-row-hint"></div>
     <div class="sb-list" id="log-list">
       <div class="sb-empty">Список загружается...</div>
     </div>
