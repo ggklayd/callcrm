@@ -90,14 +90,8 @@
       if (!inp) return;
       const today = new Date();
       const pad = n => String(n).padStart(2, '0');
-      const todayStr = today.getFullYear() + '-' + pad(today.getMonth()+1) + '-' + pad(today.getDate());
-      const storageKey = 'crm_stat_date_' + PROJECT_ID + '_' + MANAGER;
-      const saved = localStorage.getItem(storageKey);
-      inp.value = saved || todayStr;
-      inp.addEventListener('change', () => {
-        localStorage.setItem(storageKey, inp.value);
-        renderStats();
-      });
+      inp.value = today.getFullYear() + '-' + pad(today.getMonth()+1) + '-' + pad(today.getDate());
+      inp.addEventListener('change', () => renderStats());
     }
 
     // ── Статистика по выбранной дате ──────────────────────────────
@@ -322,6 +316,7 @@
       window._currentSheetRow = c.rowNum;
       window._currentIdx      = idx;
       window._editingAttempt  = null;
+      startTimer();
       const updateBar = document.getElementById('update-info-bar');
       if (updateBar) updateBar.remove();
       setF('f-org',       c.org_name);
@@ -439,6 +434,37 @@
         '<span style="font-size:12px;color:#1d4ed8;flex:1">Редактирование этапа ' + attemptNum + ': меняются только ЛПР и примечание, статус и дата не изменятся</span>'
         + '<button class="cb-save-btn" style="background:#2563eb;margin-top:0" onclick="updateClientInfo()">Обновить данные</button>'
         + '<button class="btn-nav" style="padding:6px 12px;font-size:12px" onclick="cancelEditAttempt()">Отмена</button>';
+    }
+
+    // ── Поиск по названию в сайдбаре ──────────────────────────────
+    window.sbNameSearch = function(query) {
+      const q = query.trim().toLowerCase();
+      const items = document.querySelectorAll('#log-list .log-item');
+      items.forEach(el => {
+        const org = (el.querySelector('.log-org')?.textContent || '').toLowerCase();
+        el.style.display = (!q || org.includes(q)) ? '' : 'none';
+      });
+    };
+
+    // ── Таймер на текущей карточке ─────────────────────────────────
+    let _timerStart = Date.now();
+    let _timerInterval = null;
+
+    function startTimer() {
+      _timerStart = Date.now();
+      if (_timerInterval) clearInterval(_timerInterval);
+      _timerInterval = setInterval(updateTimer, 1000);
+      updateTimer();
+    }
+
+    function updateTimer() {
+      const el = document.getElementById('m-timer');
+      if (!el) return;
+      const secs = Math.floor((Date.now() - _timerStart) / 1000);
+      const m = Math.floor(secs / 60);
+      const s = secs % 60;
+      el.textContent = '⏱ ' + m + ':' + String(s).padStart(2, '0');
+      el.className = 't-timer' + (secs >= 300 ? ' long' : secs >= 120 ? ' warn' : '');
     }
 
     // ── Поиск по номеру строки таблицы ───────────────────────────
@@ -920,6 +946,7 @@ input[readonly],textarea[readonly]{background:#f8fafc;color:#64748b;border-color
     <div class="t-av" id="m-av">МН</div>
     <span class="t-name" id="m-name">Менеджер</span>
     <span class="t-badge" id="m-count">0 сегодня</span>
+    <span class="t-timer" id="m-timer" title="Время на текущей карточке">⏱ 0:00</span>
   </div>
 </div>
 
@@ -1056,6 +1083,9 @@ input[readonly],textarea[readonly]{background:#f8fafc;color:#64748b;border-color
   <div class="sidebar">
     <div class="sb-head">Мои клиенты <span class="sb-clients-count" id="sb-clients-count"></span></div>
     <div class="sb-row-search">
+      <input type="text" id="sb-name-search" class="sb-row-inp" placeholder="Поиск по названию..." oninput="sbNameSearch(this.value)" style="-webkit-appearance:none">
+    </div>
+    <div class="sb-row-search" style="border-top:none;padding-top:0">
       <input type="number" id="sb-row-input" class="sb-row-inp" placeholder="№ строки..." min="2" oninput="sbRowInputChange(this.value)" onkeydown="if(event.key==='Enter')sbRowGo()">
       <button id="sb-row-btn" class="sb-row-btn" onclick="sbRowGo()" style="display:none">Перейти</button>
     </div>
