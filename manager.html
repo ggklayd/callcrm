@@ -605,9 +605,47 @@
       const org    = gv('f-org').trim();
       const phone  = gv('f-phone').trim();
       const result = window._selectedResult || '';
-      if (!org)    { showStatus('err','Укажите организацию'); return; }
-      if (!phone)  { showStatus('err','Укажите телефон'); return; }
       if (!result) { showStatus('err','Выберите результат звонка'); return; }
+
+      const highlight = (id, on) => {
+        const el = document.getElementById(id);
+        if (el) el.style.borderColor = on ? '#dc2626' : '';
+      };
+      const clearHighlights = () => {
+        ['f-lpr-name','f-lpr-phone','f-note'].forEach(id => highlight(id, false));
+      };
+
+      // Лид и КП ЛПР: обязательны Имя ЛПР, Телефон ЛПР, Примечание
+      if (['Лид', 'КП ЛПР'].includes(result)) {
+        const lprName  = gv('f-lpr-name').trim();
+        const lprPhone = gv('f-lpr-phone').trim();
+        const note     = gv('f-note').trim();
+        const errors   = [];
+        highlight('f-lpr-name',  !lprName);
+        highlight('f-lpr-phone', !lprPhone);
+        highlight('f-note',      !note);
+        if (!lprName)  errors.push('Имя ЛПР');
+        if (!lprPhone) errors.push('Телефон ЛПР');
+        if (!note)     errors.push('Примечание');
+        if (errors.length) {
+          showStatus('err', 'Для «' + result + '» обязательно: ' + errors.join(', '));
+          return;
+        }
+
+      // Отказ Сек/ЛПР, КП Сек, Перезвон Сек/ЛПР: обязательно только Примечание
+      } else if (['Отказ Сек','Отказ ЛПР','КП Сек','Перезвон Сек','Перезвон ЛПР'].includes(result)) {
+        const note = gv('f-note').trim();
+        highlight('f-lpr-name',  false);
+        highlight('f-lpr-phone', false);
+        highlight('f-note',      !note);
+        if (!note) {
+          showStatus('err', 'Для «' + result + '» обязательно заполнить Примечание');
+          return;
+        }
+
+      } else {
+        clearHighlights();
+      }
       try { setBtnLoad(true); } catch(e) {}
       const c = window._allClients[window._currentIdx] || {};
       const clientData = {
@@ -1087,6 +1125,11 @@ function pickResult(btn) {
                + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
     }
   }
+  // Снимаем красную подсветку при смене статуса
+  ['f-lpr-name','f-lpr-phone','f-note'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.borderColor = '';
+  });
 }
 
 function clearFormFields() {
