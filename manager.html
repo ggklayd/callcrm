@@ -436,14 +436,68 @@
         + '<button class="btn-nav" style="padding:6px 12px;font-size:12px" onclick="cancelEditAttempt()">Отмена</button>';
     }
 
-    // ── Поиск по названию в сайдбаре ──────────────────────────────
-    window.sbNameSearch = function(query) {
-      const q = query.trim().toLowerCase();
+    // ── Универсальный поиск в сайдбаре (название или № строки) ───
+    window.sbSearch = function(val) {
+      const v = val.trim();
+      const btn  = document.getElementById('sb-row-btn');
+      const hint = document.getElementById('sb-row-hint');
+      const isNum = /^\d+$/.test(v);
+
+      if (!v) {
+        // Сброс — показать всех
+        document.querySelectorAll('#log-list .log-item').forEach(el => el.style.display = '');
+        btn.style.display = 'none';
+        hint.textContent  = '';
+        return;
+      }
+
+      if (isNum) {
+        // Режим поиска по номеру строки
+        document.querySelectorAll('#log-list .log-item').forEach(el => el.style.display = '');
+        btn.style.display = 'block';
+        const num = parseInt(v);
+        const clients = window._allClients || [];
+        const idx = clients.findIndex(c => c.rowNum === num);
+        if (idx >= 0) {
+          hint.textContent = '→ ' + (clients[idx].org_name || '—');
+          hint.style.color = '#2563eb';
+        } else {
+          hint.textContent = 'Строка не найдена';
+          hint.style.color = '#94a3b8';
+        }
+      } else {
+        // Режим фильтра по названию
+        btn.style.display = 'none';
+        hint.textContent  = '';
+        const q = v.toLowerCase();
+        document.querySelectorAll('#log-list .log-item').forEach(el => {
+          const org = (el.querySelector('.log-org')?.textContent || '').toLowerCase();
+          el.style.display = org.includes(q) ? '' : 'none';
+        });
+      }
+    };
+
+    window.sbSearchEnter = function() {
+      const val = (document.getElementById('sb-search')?.value || '').trim();
+      if (!/^\d+$/.test(val)) return;
+      const num  = parseInt(val);
+      const hint = document.getElementById('sb-row-hint');
+      const clients = window._allClients || [];
+      const idx = clients.findIndex(c => c.rowNum === num);
+      if (idx < 0) {
+        hint.textContent = 'Строка №' + num + ' не найдена';
+        hint.style.color = '#dc2626';
+        return;
+      }
+      showCard(idx);
+      hideStatus();
       const items = document.querySelectorAll('#log-list .log-item');
-      items.forEach(el => {
-        const org = (el.querySelector('.log-org')?.textContent || '').toLowerCase();
-        el.style.display = (!q || org.includes(q)) ? '' : 'none';
-      });
+      if (items[idx]) items[idx].scrollIntoView({ block: 'nearest' });
+      document.getElementById('sb-search').value = '';
+      document.getElementById('sb-row-btn').style.display = 'none';
+      hint.textContent = '';
+      // Показываем всех обратно
+      document.querySelectorAll('#log-list .log-item').forEach(el => el.style.display = '');
     };
 
     // ── Таймер на текущей карточке ─────────────────────────────────
@@ -466,52 +520,6 @@
       el.textContent = '⏱ ' + m + ':' + String(s).padStart(2, '0');
       el.className = 't-timer' + (secs >= 300 ? ' long' : secs >= 120 ? ' warn' : '');
     }
-
-    // ── Поиск по номеру строки таблицы ───────────────────────────
-    window.sbRowInputChange = function(val) {
-      const btn  = document.getElementById('sb-row-btn');
-      const hint = document.getElementById('sb-row-hint');
-      const num  = parseInt(val);
-      if (!val || isNaN(num) || num < 2) {
-        btn.style.display  = 'none';
-        hint.textContent   = '';
-        return;
-      }
-      // Ищем клиента с таким rowNum
-      const clients = window._allClients || [];
-      const idx = clients.findIndex(c => c.rowNum === num);
-      btn.style.display = 'block';
-      if (idx >= 0) {
-        hint.textContent = '→ ' + (clients[idx].org_name || '—');
-        hint.style.color = '#2563eb';
-      } else {
-        hint.textContent = 'Строка не найдена в списке';
-        hint.style.color = '#94a3b8';
-      }
-    };
-
-    window.sbRowGo = function() {
-      const inp  = document.getElementById('sb-row-input');
-      const hint = document.getElementById('sb-row-hint');
-      const num  = parseInt(inp.value);
-      if (!num || num < 2) return;
-      const clients = window._allClients || [];
-      const idx = clients.findIndex(c => c.rowNum === num);
-      if (idx < 0) {
-        hint.textContent = 'Строка №' + num + ' не найдена';
-        hint.style.color = '#dc2626';
-        return;
-      }
-      showCard(idx);
-      hideStatus();
-      // Прокручиваем сайдбар к найденной карточке
-      const items = document.querySelectorAll('#log-list .log-item');
-      if (items[idx]) items[idx].scrollIntoView({ block: 'nearest' });
-      // Сбрасываем поле
-      inp.value = '';
-      document.getElementById('sb-row-btn').style.display = 'none';
-      hint.textContent = '';
-    };
 
     window.cancelEditAttempt = function() {
       window._editingAttempt = null;
@@ -1083,11 +1091,8 @@ input[readonly],textarea[readonly]{background:#f8fafc;color:#64748b;border-color
   <div class="sidebar">
     <div class="sb-head">Мои клиенты <span class="sb-clients-count" id="sb-clients-count"></span></div>
     <div class="sb-row-search">
-      <input type="text" id="sb-name-search" class="sb-row-inp" placeholder="Поиск по названию..." oninput="sbNameSearch(this.value)" style="-webkit-appearance:none">
-    </div>
-    <div class="sb-row-search" style="border-top:none;padding-top:0">
-      <input type="number" id="sb-row-input" class="sb-row-inp" placeholder="№ строки..." min="2" oninput="sbRowInputChange(this.value)" onkeydown="if(event.key==='Enter')sbRowGo()">
-      <button id="sb-row-btn" class="sb-row-btn" onclick="sbRowGo()" style="display:none">Перейти</button>
+      <input type="text" id="sb-search" class="sb-row-inp" placeholder="Название или № строки..." oninput="sbSearch(this.value)" onkeydown="if(event.key==='Enter')sbSearchEnter()">
+      <button id="sb-row-btn" class="sb-row-btn" onclick="sbSearchEnter()" style="display:none">Перейти</button>
     </div>
     <div id="sb-row-hint" class="sb-row-hint"></div>
     <div class="sb-list" id="log-list">
