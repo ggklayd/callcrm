@@ -50,9 +50,9 @@
       const list = document.getElementById('log-list');
       if (!list) return;
       const clients = window._allClients || [];
-      const shown = clients;
+      const shown = clients.slice(0, 500);
       const cnt = document.getElementById('sb-clients-count');
-      if (cnt) cnt.textContent = clients.length;
+      if (cnt) cnt.textContent = clients.length > 500 ? '500 / ' + clients.length : clients.length;
       if (!shown.length) {
         list.innerHTML = '<div class="sb-empty">Клиентов не найдено</div>';
         return;
