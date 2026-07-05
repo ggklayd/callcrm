@@ -42,7 +42,8 @@
       const CALLBACK_STATUSES = ['Перезвон Сек','Перезвон ЛПР'];
       const VOID_STATUSES     = ['Не компания','Частное лицо'];
 
-      let totalContacts = 0, totalDialogs = 0, totalCompanies = 0;
+      const totalContacts = clients.length;   // уникальные строки (компании в базе), массив уже дедуплицирован
+      let totalDialogs = 0, totalCompanies = 0;
 
       clients.forEach(c => {
         let companyCounted = false;
@@ -50,7 +51,6 @@
           const result = (c['result' + i] || '').toString().trim();
           if (!result) continue;
 
-          totalContacts++;                                          // каждый заполненный звонок
           if (DIALOG_STATUSES.includes(result)) totalDialogs++;     // состоявшийся диалог
 
           // уникальная обработанная компания (перезвон гасится поздним «Не компания»/«Частное лицо»)
