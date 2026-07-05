@@ -42,10 +42,11 @@
       const CALLBACK_STATUSES = ['Перезвон Сек','Перезвон ЛПР'];
       const VOID_STATUSES     = ['Не компания','Частное лицо'];
 
-      const totalContacts = clients.length;   // уникальные строки (компании в базе), массив уже дедуплицирован
-      let totalDialogs = 0, totalCompanies = 0;
+      let emptyContacts = 0, totalDialogs = 0, totalCompanies = 0;
 
       clients.forEach(c => {
+        if (!(c['result1'] || '').toString().trim()) emptyContacts++;  // нет результата 1 — строка ещё не обзванивалась
+
         let companyCounted = false;
         for (let i = 1; i <= 6; i++) {
           const result = (c['result' + i] || '').toString().trim();
@@ -68,7 +69,7 @@
           }
         }
       });
-      return { totalContacts, totalDialogs, totalCompanies };
+      return { emptyContacts, totalDialogs, totalCompanies };
     }
 
     // Загружает клиентов проекта по ВСЕМ менеджерам (тот же action, что и кабинет менеджера)
@@ -117,7 +118,7 @@
 
     function renderStats(s) {
       if (!s) return '<span class="ps-load">—</span>';
-      return '<span class="ps-item"><span class="ps-lbl">Контактов</span><span class="ps-val">' + (s.totalContacts||0) + '</span></span>'
+      return '<span class="ps-item"><span class="ps-lbl">Пустых контактов</span><span class="ps-val">' + (s.emptyContacts||0) + '</span></span>'
         + '<span class="ps-dot">·</span>'
         + '<span class="ps-item"><span class="ps-lbl">Диалогов</span><span class="ps-val ps-blue">' + (s.totalDialogs||0) + '</span></span>'
         + '<span class="ps-dot">·</span>'
