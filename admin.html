@@ -28,14 +28,7 @@
     window.projects      = {};
     window._statsCache   = {};
     window._clientsCache = {};   // сырые клиенты по проектам — чтобы при смене даты не тянуть заново
-    window._statDate     = '';   // выбранная дата в формате ДД.ММ.ГГГГ
 
-    // ДД.ММ.ГГГГ из значения input type=date (ГГГГ-ММ-ДД)
-    function isoToDDMMYYYY(v) {
-      if (!v) return '';
-      const [y, m, d] = v.split('-');
-      return d + '.' + m + '.' + y;
-    }
     // Приводит дату из таблицы к ДД.ММ.ГГГГ (Date | ISO | ДД.ММ.ГГГГ с временем)
     function normDate(d) {
       if (!d) return '';
@@ -48,17 +41,28 @@
       }
       return s.replace(/(\d{2})\.(\d{2})\.(\d{4}).*/, '$1.$2.$3');
     }
-    // По умолчанию — режим «Всего» (без фильтра по дате)
+    // Ключ даты ГГГГММДД (число) для сравнения диапазонов
+    function dateKey(d) {
+      const s = normDate(d);
+      const m = s.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+      return m ? +(m[3] + m[2] + m[1]) : 0;
+    }
+    function isoToKey(v) { return v ? +v.replace(/-/g, '') : 0; }
+
+    window._dateMode            = 'all';   // 'all' | 'date' | 'period'
+    window._statRange           = null;    // null = всего, иначе {fromKey, toKey}
+    window._managerClientsCache = {};      // projectId -> { менеджер: клиенты[] }
+
+    // По умолчанию — режим «Всего»
     (function () {
-      window._statDate = '';   // '' = всего
-      const btn = document.getElementById('btn-all');
-      if (btn) btn.classList.add('active');
+      const b = document.getElementById('dm-all');
+      if (b) b.classList.add('active');
     })();
 
-    // Считает статистику проекта из клиентов (формат getAllClients: result1..6, date1..6).
-    // По всем менеджерам проекта. Диалоги и компании — за дату ddmmyyyy (если задана);
-    // «Пустых контактов» — текущий остаток базы, от даты не зависит.
-    function calcStatsFromClients(clients, ddmmyyyy) {
+    // Считает статистику из клиентов (формат getAllClients: result1..6, date1..6).
+    // range = null (всего) | {fromKey,toKey} — фильтрует диалоги/компании/лиды по дате/периоду.
+    // «Пустых контактов» — текущий остаток базы, от диапазона не зависит.
+    function calcStatsFromClients(clients, range) {
       const DIALOG_STATUSES   = ['Отказ Сек','Отказ ЛПР','КП Сек','КП ЛПР','Перезвон Сек','Перезвон ЛПР','Лид'];
       const CALLBACK_STATUSES = ['Перезвон Сек','Перезвон ЛПР'];
       const VOID_STATUSES     = ['Не компания','Частное лицо'];
@@ -77,7 +81,7 @@
         for (let i = 1; i <= 6; i++) {
           const result = (c['result' + i] || '').toString().trim();
           if (!result) continue;
-          if (ddmmyyyy && normDate(c['date' + i]) !== ddmmyyyy) continue;  // фильтр по дате
+          if (range) { const k = dateKey(c['date' + i]); if (!k || k < range.fromKey || k > range.toKey) continue; }  // фильтр по дате/периоду
 
           if (DIALOG_STATUSES.includes(result)) totalDialogs++;     // состоявшийся диалог за дату
           if (result === 'Лид')    isLead  = true;
@@ -123,14 +127,18 @@
 
       try {
         // тянем строки каждого менеджера параллельно
+        const perManager = {};
         const results = await Promise.all(mgrs.map(async m => {
           try {
             const url  = BASE_WEBHOOK + '?action=getAllClients&manager=' + encodeURIComponent(m) + '&spreadsheetId=' + spreadsheetId;
             const resp = await fetch(url);
             const data = await resp.json();
-            return (data.ok && Array.isArray(data.clients)) ? data.clients : [];
-          } catch(e) { return []; }
+            const arr = (data.ok && Array.isArray(data.clients)) ? data.clients : [];
+            perManager[m] = arr;
+            return arr;
+          } catch(e) { perManager[m] = []; return []; }
         }));
+        window._managerClientsCache[projectId] = perManager;   // для статистики по менеджерам
 
         // объединяем строки всех менеджеров, дедуп по номеру строки
         const seen = {}, allClients = [];
@@ -176,31 +184,48 @@
       if (!e) return;
       const clients = window._clientsCache[projectId];
       if (!clients) return;
-      const stats = calcStatsFromClients(clients, window._statDate);
+      const stats = calcStatsFromClients(clients, window._statRange);
       window._statsCache[projectId] = stats;
       e.innerHTML = renderStats(stats);
     }
 
-    // Обновляет подсветку кнопки «Всего»
-    function updateDateModeUI() {
-      const btn = document.getElementById('btn-all');
-      if (btn) btn.classList.toggle('active', !window._statDate);
+    // Собирает диапазон дат из текущего режима и полей
+    function computeRange() {
+      const mode = window._dateMode;
+      if (mode === 'all') return null;
+      if (mode === 'date') {
+        const k = isoToKey(document.getElementById('stat-date')?.value);
+        return k ? { fromKey: k, toKey: k } : null;
+      }
+      // период
+      let f = isoToKey(document.getElementById('stat-from')?.value);
+      let t = isoToKey(document.getElementById('stat-to')?.value);
+      if (!f && !t) return null;
+      if (!f) f = t;
+      if (!t) t = f;
+      if (f > t) { const x = f; f = t; t = x; }
+      return { fromKey: f, toKey: t };
     }
 
-    // Смена даты — пересчёт всех проектов из кэша, без повторной загрузки
-    window.onStatDate = function (isoVal) {
-      window._statDate = isoToDDMMYYYY(isoVal);
-      updateDateModeUI();
+    // Пересчёт всех проектов из кэша под текущий диапазон (без повторной загрузки)
+    window.applyDateFilter = function () {
+      window._statRange = computeRange();
       Object.keys(window._clientsCache).forEach(pid => renderProjectStatsFor(pid));
+      if (window._dpId) renderManagerStats(window._dpId);   // если открыта модалка — обновим её
     };
 
-    // Режим «Всего» — сбрасывает дату, статистика за всё время
-    window.setAllTime = function () {
-      window._statDate = '';
-      const inp = document.getElementById('stat-date');
-      if (inp) inp.value = '';
-      updateDateModeUI();
-      Object.keys(window._clientsCache).forEach(pid => renderProjectStatsFor(pid));
+    // Переключение режима: Всего / Дата / Период
+    window.setDateMode = function (mode) {
+      window._dateMode = mode;
+      ['all', 'date', 'period'].forEach(m => {
+        const b = document.getElementById('dm-' + m);
+        if (b) b.classList.toggle('active', m === mode);
+      });
+      const single = document.getElementById('date-single');
+      const period = document.getElementById('date-period');
+      if (single) single.style.display = mode === 'date'   ? 'flex' : 'none';
+      if (period) period.style.display = mode === 'period' ? 'flex' : 'none';
+      window.applyDateFilter();
     };
 
     onSnapshot(collection(db,'admin_projects'), snap => {
@@ -283,19 +308,42 @@
       const mgrs = p.managers || [];
       const ml   = document.getElementById('dp-mgrs');
       ml.innerHTML = !mgrs.length ? '<div class="no-mgr">Нет менеджеров. Добавьте ниже.</div>'
-        : mgrs.map(m => {
+        : mgrs.map((m, i) => {
             const link = BASE+'/manager.html?project='+id+'&manager='+encodeURIComponent(m);
             return '<div class="mgr-row">'
               + '<div class="mgr-av" style="background:'+strColor(m)+'">'+m[0].toUpperCase()+'</div>'
               + '<div class="mgr-info">'
               +   '<div class="mgr-name">'+esc(m)+'</div>'
+              +   '<div class="mgr-stats" id="mgrst-'+id+'-'+i+'"></div>'
               +   '<div class="mgr-url">'+esc(link)+'</div>'
               + '</div>'
               + '<button class="mgr-copy" onclick="copyText(\''+link+'\')">Копировать</button>'
               + '<button class="mgr-del" onclick="removeManager(\''+id+'\',\''+esc(m)+'\')">&#10005;</button>'
               + '</div>';
           }).join('');
+      renderManagerStats(id);
       openModal('m-detail');
+    };
+
+    // Статистика по каждому менеджеру проекта (в модалке), за текущий диапазон
+    window.renderManagerStats = function (projectId) {
+      const p = window.projects[projectId];
+      if (!p) return;
+      const perMgr = window._managerClientsCache[projectId];
+      (p.managers || []).forEach((m, i) => {
+        const el = document.getElementById('mgrst-' + projectId + '-' + i);
+        if (!el) return;
+        if (!perMgr || !perMgr[m]) { el.innerHTML = '<span class="ps-load">загрузка статистики...</span>'; return; }
+        const s = calcStatsFromClients(perMgr[m], window._statRange);
+        const comp = s.totalCompanies || 0;
+        const pctLead = comp ? Math.round((s.leadCompanies || 0) / comp * 100) : 0;
+        el.innerHTML =
+            '<span class="mst-item">Диалогов <b>' + (s.totalDialogs || 0) + '</b></span>'
+          + '<span class="mst-item">Компаний <b>' + comp + '</b></span>'
+          + '<span class="mst-item">Лидов <b class="mst-green">' + (s.leadCompanies || 0) + '</b></span>'
+          + '<span class="mst-item">КП ЛПР <b class="mst-indigo">' + (s.kplprCompanies || 0) + '</b></span>'
+          + '<span class="mst-item">Конв. <b class="mst-green">' + pctLead + '%</b></span>';
+      });
     };
 
     window.addManager = async function() {
@@ -546,6 +594,12 @@
     .date-toggle{padding:6px 12px;border:1px solid var(--border2);border-radius:7px;background:var(--white);color:var(--sec);font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;white-space:nowrap;transition:all .12s}
     .date-toggle:hover{border-color:#9ca3af;color:var(--text)}
     .date-toggle.active{background:#eff6ff;border-color:#93c5fd;color:var(--accent)}
+    .seg{display:flex;gap:4px}
+    .mgr-stats{display:flex;flex-wrap:wrap;gap:10px;margin:3px 0}
+    .mst-item{font-size:11px;color:var(--muted);white-space:nowrap}
+    .mst-item b{color:var(--text);font-weight:600}
+    .mst-item b.mst-green{color:#16a34a}
+    .mst-item b.mst-indigo{color:#4338ca}
     .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--text);color:#fff;border-radius:7px;padding:10px 20px;font-size:13px;font-weight:500;opacity:0;transition:all .2s;z-index:200;pointer-events:none;white-space:nowrap}
     .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   </style>
@@ -563,9 +617,18 @@
     <div class="section-label" style="margin-bottom:0">Ваши проекты</div>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
       <span class="date-lbl">Статистика:</span>
-      <button id="btn-all" class="date-toggle" onclick="setAllTime()">Всего</button>
-      <div class="date-wrap">
-        <input type="date" id="stat-date" onchange="onStatDate(this.value)">
+      <div class="seg">
+        <button id="dm-all"    class="date-toggle" onclick="setDateMode('all')">Всего</button>
+        <button id="dm-date"   class="date-toggle" onclick="setDateMode('date')">Дата</button>
+        <button id="dm-period" class="date-toggle" onclick="setDateMode('period')">Период</button>
+      </div>
+      <div id="date-single" class="date-wrap" style="display:none">
+        <input type="date" id="stat-date" onchange="applyDateFilter()">
+      </div>
+      <div id="date-period" style="display:none;align-items:center;gap:6px">
+        <div class="date-wrap"><input type="date" id="stat-from" onchange="applyDateFilter()"></div>
+        <span class="date-lbl">—</span>
+        <div class="date-wrap"><input type="date" id="stat-to" onchange="applyDateFilter()"></div>
       </div>
       <div class="search-wrap">
         <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--muted);flex-shrink:0"><circle cx="8.5" cy="8.5" r="5.5"/><path d="M15 15l-3-3"/></svg>
