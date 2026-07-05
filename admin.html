@@ -25,19 +25,40 @@
     const BASE = 'https://ggklayd.github.io/callcrm';
     const BASE_WEBHOOK = 'https://script.google.com/macros/s/AKfycbxsCQVfeAFrbipFVIlm3rx2f2z0UP8nuJ6z2DuKrUHdcoHsxZimiJP3pr34SJS7SKpb/exec';
 
-    window.projects = {};
-    window._statsCache = {};
+    window.projects      = {};
+    window._statsCache   = {};
+    window._clientsCache = {};   // сырые клиенты по проектам — чтобы при смене даты не тянуть заново
+    window._statDate     = '';   // выбранная дата в формате ДД.ММ.ГГГГ
 
-    // Форматирование даты для статистики
-    function todayStr() {
-      const now = new Date();
-      const pad = n => String(n).padStart(2,'0');
-      return pad(now.getDate()) + '.' + pad(now.getMonth()+1) + '.' + now.getFullYear();
+    // ДД.ММ.ГГГГ из значения input type=date (ГГГГ-ММ-ДД)
+    function isoToDDMMYYYY(v) {
+      if (!v) return '';
+      const [y, m, d] = v.split('-');
+      return d + '.' + m + '.' + y;
     }
+    // Приводит дату из таблицы к ДД.ММ.ГГГГ (Date | ISO | ДД.ММ.ГГГГ с временем)
+    function normDate(d) {
+      if (!d) return '';
+      const pad = n => String(n).padStart(2, '0');
+      if (d instanceof Date) return pad(d.getDate()) + '.' + pad(d.getMonth()+1) + '.' + d.getFullYear();
+      const s = d.toString().trim();
+      if (/^\d{4}-/.test(s)) {
+        const dt = new Date(s);
+        if (!isNaN(dt)) return pad(dt.getDate()) + '.' + pad(dt.getMonth()+1) + '.' + dt.getFullYear();
+      }
+      return s.replace(/(\d{2})\.(\d{2})\.(\d{4}).*/, '$1.$2.$3');
+    }
+    // По умолчанию — режим «Всего» (без фильтра по дате)
+    (function () {
+      window._statDate = '';   // '' = всего
+      const btn = document.getElementById('btn-all');
+      if (btn) btn.classList.add('active');
+    })();
 
-    // Считает статистику проекта из клиентов (формат getAllClients: result1..6)
-    // ВСЕГО за всё время, по всем менеджерам проекта. Та же логика, что в кабинете менеджера.
-    function calcStatsFromClients(clients) {
+    // Считает статистику проекта из клиентов (формат getAllClients: result1..6, date1..6).
+    // По всем менеджерам проекта. Диалоги и компании — за дату ddmmyyyy (если задана);
+    // «Пустых контактов» — текущий остаток базы, от даты не зависит.
+    function calcStatsFromClients(clients, ddmmyyyy) {
       const DIALOG_STATUSES   = ['Отказ Сек','Отказ ЛПР','КП Сек','КП ЛПР','Перезвон Сек','Перезвон ЛПР','Лид'];
       const CALLBACK_STATUSES = ['Перезвон Сек','Перезвон ЛПР'];
       const VOID_STATUSES     = ['Не компания','Частное лицо'];
@@ -51,8 +72,9 @@
         for (let i = 1; i <= 6; i++) {
           const result = (c['result' + i] || '').toString().trim();
           if (!result) continue;
+          if (ddmmyyyy && normDate(c['date' + i]) !== ddmmyyyy) continue;  // фильтр по дате
 
-          if (DIALOG_STATUSES.includes(result)) totalDialogs++;     // состоявшийся диалог
+          if (DIALOG_STATUSES.includes(result)) totalDialogs++;     // состоявшийся диалог за дату
 
           // уникальная обработанная компания (перезвон гасится поздним «Не компания»/«Частное лицо»)
           if (!companyCounted && DIALOG_STATUSES.includes(result)) {
@@ -107,9 +129,8 @@
 
         if (!allClients.length) { put('<span class="ps-load">нет данных</span>'); return; }
 
-        const stats = calcStatsFromClients(allClients);
-        window._statsCache[projectId] = stats;
-        put(renderStats(stats));
+        window._clientsCache[projectId] = allClients;   // кэшируем сырые строки
+        renderProjectStatsFor(projectId);               // считаем за выбранную дату
       } catch(e) {
         console.warn('[stats]', projectId, e.message);
         put('<span class="ps-load">ошибка загрузки</span>');
@@ -124,6 +145,39 @@
         + '<span class="ps-dot">·</span>'
         + '<span class="ps-item"><span class="ps-lbl">Компаний</span><span class="ps-val ps-green">' + (s.totalCompanies||0) + '</span></span>';
     }
+
+    // Пересчитывает и рисует статистику проекта из кэша за текущую дату
+    function renderProjectStatsFor(projectId) {
+      const e = document.getElementById('ps-' + projectId);
+      if (!e) return;
+      const clients = window._clientsCache[projectId];
+      if (!clients) return;
+      const stats = calcStatsFromClients(clients, window._statDate);
+      window._statsCache[projectId] = stats;
+      e.innerHTML = renderStats(stats);
+    }
+
+    // Обновляет подсветку кнопки «Всего»
+    function updateDateModeUI() {
+      const btn = document.getElementById('btn-all');
+      if (btn) btn.classList.toggle('active', !window._statDate);
+    }
+
+    // Смена даты — пересчёт всех проектов из кэша, без повторной загрузки
+    window.onStatDate = function (isoVal) {
+      window._statDate = isoToDDMMYYYY(isoVal);
+      updateDateModeUI();
+      Object.keys(window._clientsCache).forEach(pid => renderProjectStatsFor(pid));
+    };
+
+    // Режим «Всего» — сбрасывает дату, статистика за всё время
+    window.setAllTime = function () {
+      window._statDate = '';
+      const inp = document.getElementById('stat-date');
+      if (inp) inp.value = '';
+      updateDateModeUI();
+      Object.keys(window._clientsCache).forEach(pid => renderProjectStatsFor(pid));
+    };
 
     onSnapshot(collection(db,'admin_projects'), snap => {
       window.projects = {};
@@ -461,6 +515,12 @@
     .search-wrap{display:flex;align-items:center;gap:7px;border:1px solid var(--border2);border-radius:7px;padding:6px 10px;background:var(--white)}
     .search-wrap input{border:none;outline:none;font-size:13px;color:var(--text);width:200px;font-family:inherit;background:transparent}
     .search-wrap input::placeholder{color:var(--muted)}
+    .date-wrap{display:flex;align-items:center;gap:7px;border:1px solid var(--border2);border-radius:7px;padding:5px 10px;background:var(--white)}
+    .date-lbl{font-size:12px;color:var(--muted);white-space:nowrap}
+    .date-wrap input{border:none;outline:none;font-size:13px;color:var(--text);font-family:inherit;background:transparent;cursor:pointer}
+    .date-toggle{padding:6px 12px;border:1px solid var(--border2);border-radius:7px;background:var(--white);color:var(--sec);font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;white-space:nowrap;transition:all .12s}
+    .date-toggle:hover{border-color:#9ca3af;color:var(--text)}
+    .date-toggle.active{background:#eff6ff;border-color:#93c5fd;color:var(--accent)}
     .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--text);color:#fff;border-radius:7px;padding:10px 20px;font-size:13px;font-weight:500;opacity:0;transition:all .2s;z-index:200;pointer-events:none;white-space:nowrap}
     .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   </style>
@@ -474,11 +534,18 @@
 </div>
 
 <div class="content">
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:12px;flex-wrap:wrap">
     <div class="section-label" style="margin-bottom:0">Ваши проекты</div>
-    <div class="search-wrap">
-      <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--muted);flex-shrink:0"><circle cx="8.5" cy="8.5" r="5.5"/><path d="M15 15l-3-3"/></svg>
-      <input type="text" placeholder="Поиск по названию..." oninput="onSearch(this.value)">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span class="date-lbl">Статистика:</span>
+      <button id="btn-all" class="date-toggle" onclick="setAllTime()">Всего</button>
+      <div class="date-wrap">
+        <input type="date" id="stat-date" onchange="onStatDate(this.value)">
+      </div>
+      <div class="search-wrap">
+        <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--muted);flex-shrink:0"><circle cx="8.5" cy="8.5" r="5.5"/><path d="M15 15l-3-3"/></svg>
+        <input type="text" placeholder="Поиск по названию..." oninput="onSearch(this.value)">
+      </div>
     </div>
   </div>
   <div class="proj-list" id="proj-list">
