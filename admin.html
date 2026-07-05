@@ -35,84 +35,103 @@
       return pad(now.getDate()) + '.' + pad(now.getMonth()+1) + '.' + now.getFullYear();
     }
 
-    // Считает статистику из массива rows (все строки таблицы)
-    function calcStats(rows) {
-      const today = todayStr();
-      const DIALOG_STATUSES    = ['Отказ Сек','Отказ ЛПР','КП Сек','КП ЛПР','Перезвон Сек','Перезвон ЛПР','Лид'];
-      const PROCESSED_STATUSES = ['Отказ Сек','Отказ ЛПР','КП Сек','КП ЛПР','Перезвон Сек','Перезвон ЛПР','Лид'];
-      const CALLBACK_STATUSES  = ['Перезвон Сек','Перезвон ЛПР'];
-      const VOID_STATUSES      = ['Не компания','Частное лицо'];
+    // Считает статистику проекта из клиентов (формат getAllClients: result1..6)
+    // ВСЕГО за всё время, по всем менеджерам проекта. Та же логика, что в кабинете менеджера.
+    function calcStatsFromClients(clients) {
+      const DIALOG_STATUSES   = ['Отказ Сек','Отказ ЛПР','КП Сек','КП ЛПР','Перезвон Сек','Перезвон ЛПР','Лид'];
+      const CALLBACK_STATUSES = ['Перезвон Сек','Перезвон ЛПР'];
+      const VOID_STATUSES     = ['Не компания','Частное лицо'];
 
-      let totalCalls = 0, totalDialogs = 0, processedCompanies = 0;
+      let totalContacts = 0, totalDialogs = 0, totalCompanies = 0;
 
-      // rows[0] — заголовки, rows[1+] — данные
-      for (let i = 1; i < rows.length; i++) {
-        const row = rows[i];
-        let rowCounted = false;
+      clients.forEach(c => {
+        let companyCounted = false;
+        for (let i = 1; i <= 6; i++) {
+          const result = (c['result' + i] || '').toString().trim();
+          if (!result) continue;
 
-        for (let att = 1; att <= 6; att++) {
-          const base   = 35 + (att - 1) * 5;
-          const result = (row[base]     || '').toString().trim();
-          const date   = (row[base + 3] || '').toString().trim().replace(/(\d{2})\.(\d{2})\.(\d{4}).*/, '$1.$2.$3');
-          if (!result || !date) continue;
-          if (date !== today) continue;
+          totalContacts++;                                          // каждый заполненный звонок
+          if (DIALOG_STATUSES.includes(result)) totalDialogs++;     // состоявшийся диалог
 
-          totalCalls++;
-          if (DIALOG_STATUSES.includes(result)) totalDialogs++;
-
-          if (!rowCounted && PROCESSED_STATUSES.includes(result)) {
+          // уникальная обработанная компания (перезвон гасится поздним «Не компания»/«Частное лицо»)
+          if (!companyCounted && DIALOG_STATUSES.includes(result)) {
             if (CALLBACK_STATUSES.includes(result)) {
               let voided = false;
-              for (let j = att + 1; j <= 6; j++) {
-                const rj = (row[35 + (j-1)*5] || '').toString().trim();
+              for (let j = i + 1; j <= 6; j++) {
+                const rj = (c['result' + j] || '').toString().trim();
                 if (VOID_STATUSES.includes(rj)) { voided = true; break; }
               }
-              if (!voided) { processedCompanies++; rowCounted = true; }
+              if (!voided) { totalCompanies++; companyCounted = true; }
             } else {
-              processedCompanies++;
-              rowCounted = true;
+              totalCompanies++; companyCounted = true;
             }
           }
         }
-      }
-      return { totalCalls, totalDialogs, processedCompanies };
+      });
+      return { totalContacts, totalDialogs, totalCompanies };
     }
 
-    // Загружает данные таблицы и считает статистику
-    async function loadProjectStats(projectId, sheetsUrl) {
-      if (!sheetsUrl) return;
+    // Загружает клиентов проекта по ВСЕМ менеджерам (тот же action, что и кабинет менеджера)
+    // и считает статистику всего проекта.
+    async function loadProjectStats(projectId, sheetsUrl, managers) {
+      const put = html => { const e = document.getElementById('ps-' + projectId); if (e) e.innerHTML = html; };
+
+      if (!sheetsUrl) { put('<span class="ps-load">нет таблицы</span>'); return; }
       const match = sheetsUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
-      if (!match) return;
+      if (!match) { put('<span class="ps-load">неверная ссылка</span>'); return; }
       const spreadsheetId = match[1];
+
+      const mgrs = (managers || []).filter(Boolean);
+      if (!mgrs.length) { put('<span class="ps-load">нет менеджеров</span>'); return; }
+
       try {
-        const url  = BASE_WEBHOOK + '?action=exportSheet&spreadsheetId=' + spreadsheetId;
-        const resp = await fetch(url);
-        const data = await resp.json();
-        if (!data.ok || !data.rows) return;
-        const stats = calcStats(data.rows);
+        // тянем строки каждого менеджера параллельно
+        const results = await Promise.all(mgrs.map(async m => {
+          try {
+            const url  = BASE_WEBHOOK + '?action=getAllClients&manager=' + encodeURIComponent(m) + '&spreadsheetId=' + spreadsheetId;
+            const resp = await fetch(url);
+            const data = await resp.json();
+            return (data.ok && Array.isArray(data.clients)) ? data.clients : [];
+          } catch(e) { return []; }
+        }));
+
+        // объединяем строки всех менеджеров, дедуп по номеру строки
+        const seen = {}, allClients = [];
+        results.flat().forEach(c => {
+          const key = c.rowNum != null ? 'r' + c.rowNum : (c.org_name || '') + '|' + (c.phone1 || '');
+          if (seen[key]) return;
+          seen[key] = true;
+          allClients.push(c);
+        });
+
+        if (!allClients.length) { put('<span class="ps-load">нет данных</span>'); return; }
+
+        const stats = calcStatsFromClients(allClients);
         window._statsCache[projectId] = stats;
-        const el = document.getElementById('ps-' + projectId);
-        if (el) el.innerHTML = renderStats(stats);
-      } catch(e) { console.warn('Stats:', projectId, e.message); }
+        put(renderStats(stats));
+      } catch(e) {
+        console.warn('[stats]', projectId, e.message);
+        put('<span class="ps-load">ошибка загрузки</span>');
+      }
     }
 
     function renderStats(s) {
       if (!s) return '<span class="ps-load">—</span>';
-      return '<span class="ps-item"><span class="ps-lbl">Звонков</span><span class="ps-val">' + (s.totalCalls||0) + '</span></span>'
+      return '<span class="ps-item"><span class="ps-lbl">Контактов</span><span class="ps-val">' + (s.totalContacts||0) + '</span></span>'
         + '<span class="ps-dot">·</span>'
         + '<span class="ps-item"><span class="ps-lbl">Диалогов</span><span class="ps-val ps-blue">' + (s.totalDialogs||0) + '</span></span>'
         + '<span class="ps-dot">·</span>'
-        + '<span class="ps-item"><span class="ps-lbl">Компаний</span><span class="ps-val ps-green">' + (s.processedCompanies||0) + '</span></span>';
+        + '<span class="ps-item"><span class="ps-lbl">Компаний</span><span class="ps-val ps-green">' + (s.totalCompanies||0) + '</span></span>';
     }
 
     onSnapshot(collection(db,'admin_projects'), snap => {
       window.projects = {};
       snap.docs.forEach(d => { window.projects[d.id] = {id:d.id,...d.data()}; });
       renderProjects();
-      // Загружаем статистику за сегодня для каждого активного проекта
+      // Статистика всего проекта (по всем менеджерам)
       snap.docs.forEach(d => {
         const p = d.data();
-        if (p.sheets_url) loadProjectStats(d.id, p.sheets_url);
+        loadProjectStats(d.id, p.sheets_url, p.managers);
       });
     });
 
