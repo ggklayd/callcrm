@@ -67,23 +67,26 @@
       const CALLBACK_STATUSES = ['Перезвон Сек','Перезвон ЛПР'];
       const VOID_STATUSES     = ['Не компания','Частное лицо'];
 
-      let emptyContacts = 0, totalDialogs = 0, totalCompanies = 0;
+      let emptyContacts = 0, totalContacts = 0, totalDialogs = 0, totalCompanies = 0;
       let leadCompanies = 0, kplprCompanies = 0, interestedCompanies = 0;
+      let lastActivityKey = 0;   // максимум ГГГГММДД по всем попыткам (не зависит от диапазона)
 
       clients.forEach(c => {
         const org = (c.org_name || '').toString().trim();
+        if (org) totalContacts++;                                     // именованная строка = контакт базы
         // пустой контакт = есть наименование, но результат 1 не заполнен
-        // (безымянные пустые строки таблицы не считаем)
         if (org && !(c['result1'] || '').toString().trim()) emptyContacts++;
 
         let companyCounted = false;
-        let isLead = false, isKplpr = false;   // статусы этой компании (в рамках даты)
+        let isLead = false, isKplpr = false;   // статусы этой компании (в рамках диапазона)
         for (let i = 1; i <= 6; i++) {
           const result = (c['result' + i] || '').toString().trim();
           if (!result) continue;
-          if (range) { const k = dateKey(c['date' + i]); if (!k || k < range.fromKey || k > range.toKey) continue; }  // фильтр по дате/периоду
+          const k = dateKey(c['date' + i]);
+          if (k > lastActivityKey) lastActivityKey = k;               // последняя активность — по всем попыткам
+          if (range && (!k || k < range.fromKey || k > range.toKey)) continue;  // фильтр по дате/периоду
 
-          if (DIALOG_STATUSES.includes(result)) totalDialogs++;     // состоявшийся диалог за дату
+          if (DIALOG_STATUSES.includes(result)) totalDialogs++;
           if (result === 'Лид')    isLead  = true;
           if (result === 'КП ЛПР') isKplpr = true;
 
@@ -109,7 +112,7 @@
           if (isLead || isKplpr) interestedCompanies++;
         }
       });
-      return { emptyContacts, totalDialogs, totalCompanies, leadCompanies, kplprCompanies, interestedCompanies };
+      return { emptyContacts, totalContacts, totalDialogs, totalCompanies, leadCompanies, kplprCompanies, interestedCompanies, lastActivityKey };
     }
 
     // Загружает клиентов проекта по ВСЕМ менеджерам (тот же action, что и кабинет менеджера)
@@ -178,15 +181,42 @@
         + dot + item('Конв. заинт.', pctInt + '%', 'ps-indigo');
     }
 
-    // Пересчитывает и рисует статистику проекта из кэша за текущую дату
+    // Полоска прогресса базы: обработано (есть результат 1) из всех именованных контактов
+    function renderProgress(s) {
+      const total = s && s.totalContacts || 0;
+      if (!total) return '';
+      const done = Math.max(0, total - (s.emptyContacts || 0));
+      const pct  = Math.round(done / total * 100);
+      return '<div class="pp-bar"><div class="pp-fill" style="width:' + pct + '%"></div></div>'
+           + '<span class="pp-txt">обработано ' + done + ' / ' + total + ' · ' + pct + '%</span>';
+    }
+
+    // «активность N дней назад» из максимальной даты попыток (ГГГГММДД)
+    function renderLastActivity(s) {
+      const k = s && s.lastActivityKey || 0;
+      if (!k) return '';
+      const y = Math.floor(k / 10000), m = Math.floor(k / 100) % 100, d = k % 100;
+      const then = new Date(y, m - 1, d);
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const diff = Math.round((today - then) / 86400000);
+      let txt;
+      if (diff <= 0)      txt = 'сегодня';
+      else if (diff === 1) txt = 'вчера';
+      else if (diff < 5)   txt = diff + ' дня назад';
+      else                 txt = diff + ' дней назад';
+      return ' · активность ' + txt;
+    }
+
+    // Пересчитывает и рисует статистику проекта из кэша за текущий диапазон
     function renderProjectStatsFor(projectId) {
-      const e = document.getElementById('ps-' + projectId);
-      if (!e) return;
       const clients = window._clientsCache[projectId];
       if (!clients) return;
       const stats = calcStatsFromClients(clients, window._statRange);
       window._statsCache[projectId] = stats;
-      e.innerHTML = renderStats(stats);
+      const ps = document.getElementById('ps-' + projectId); if (ps) ps.innerHTML = renderStats(stats);
+      const pp = document.getElementById('pp-' + projectId); if (pp) pp.innerHTML = renderProgress(stats);
+      const la = document.getElementById('la-' + projectId); if (la) la.innerHTML = renderLastActivity(stats);
+      scheduleResort();   // если сортировка по статистике — перестроить список
     }
 
     // Собирает диапазон дат из текущего режима и полей
@@ -239,35 +269,67 @@
       });
     });
 
-    window._search = '';
-    window.onSearch = function(v) { window._search = v.toLowerCase(); renderProjects(); };
+    window._search       = '';
+    window._sortBy       = 'name';
+    window._filterStatus = 'all';
+    window.onSearch       = function(v) { window._search = v.toLowerCase(); renderProjects(); };
+    window.onSort         = function(v) { window._sortBy = v; renderProjects(); };
+    window.onFilterStatus = function(v) { window._filterStatus = v; renderProjects(); };
+
+    // Перестройка списка при сортировке по статистике — после того как она подгрузилась
+    let _resortTimer = null;
+    function scheduleResort() {
+      if (!['conv','leads','empty','activity'].includes(window._sortBy)) return;
+      clearTimeout(_resortTimer);
+      _resortTimer = setTimeout(renderProjects, 250);
+    }
+
+    function tsNum(ts) { try { const d = ts && ts.toDate ? ts.toDate() : new Date(ts); return d.getTime() || 0; } catch(e) { return 0; } }
+    function statOf(id) { return window._statsCache[id] || {}; }
+    function convOf(id) { const s = statOf(id); const c = s.totalCompanies || 0; return c ? (s.leadCompanies || 0) / c : 0; }
+    function projectComparator(sb) {
+      switch (sb) {
+        case 'created':  return (a,b) => tsNum(b.createdAt) - tsNum(a.createdAt);
+        case 'conv':     return (a,b) => convOf(b.id) - convOf(a.id);
+        case 'leads':    return (a,b) => (statOf(b.id).leadCompanies || 0) - (statOf(a.id).leadCompanies || 0);
+        case 'empty':    return (a,b) => (statOf(b.id).emptyContacts || 0) - (statOf(a.id).emptyContacts || 0);
+        case 'activity': return (a,b) => (statOf(b.id).lastActivityKey || 0) - (statOf(a.id).lastActivityKey || 0);
+        case 'name':
+        default:         return (a,b) => (a.name || '').localeCompare(b.name || '', 'ru');
+      }
+    }
 
     function renderProjects() {
-      const list   = document.getElementById('proj-list');
-      const search = window._search || '';
-      let items    = Object.values(window.projects);
+      const list     = document.getElementById('proj-list');
+      const search   = window._search || '';
+      const allItems = Object.values(window.projects);
+      let items      = allItems.slice();
 
-      if (search) {
-        items = items.filter(p => (p.name||'').toLowerCase().includes(search));
-      }
+      const fs = window._filterStatus || 'all';
+      if (fs === 'active')   items = items.filter(p => p.active);
+      if (fs === 'archived') items = items.filter(p => !p.active);
+      if (search)            items = items.filter(p => (p.name||'').toLowerCase().includes(search));
+      items.sort(projectComparator(window._sortBy || 'name'));
 
-      if (!items.length && !search) {
+      if (!allItems.length) {
         list.innerHTML = '<div class="empty"><div class="empty-icon">&#128193;</div><div class="empty-title">Нет проектов</div><div class="empty-sub">Нажмите «Создать проект» чтобы начать</div></div>';
         return;
       }
-      if (!items.length && search) {
-        list.innerHTML = '<div class="empty"><div class="empty-icon">&#128269;</div><div class="empty-title">Ничего не найдено</div><div class="empty-sub">Попробуйте другой запрос</div></div>';
+      if (!items.length) {
+        list.innerHTML = '<div class="empty"><div class="empty-icon">&#128269;</div><div class="empty-title">Ничего не найдено</div><div class="empty-sub">Измените фильтр или запрос</div></div>';
         return;
       }
       list.innerHTML = items.map(p => {
         const col = strColor(p.name);
+        const st  = window._statsCache[p.id];
         return '<div class="proj-row" onclick="openProject(\'' + p.id + '\')">'
           + '<div class="proj-av" style="background:' + col + '">' + (p.name||'?')[0].toUpperCase() + '</div>'
-          + '<div class="proj-info"><div class="proj-name">' + esc(p.name) + '</div>'
-          + '<div class="proj-meta">' + ((p.managers||[]).length) + ' менеджеров · создан ' + fmtDate(p.createdAt) + '</div>'
-          + '<div class="proj-stats" id="ps-' + p.id + '">'
-          + (window._statsCache[p.id] ? renderStats(window._statsCache[p.id]) : '<span class="ps-load">загрузка...</span>')
-          + '</div>'
+          + '<div class="proj-info">'
+          +   '<div class="proj-name">' + esc(p.name) + '</div>'
+          +   '<div class="proj-meta">' + ((p.managers||[]).length) + ' менеджеров · создан ' + fmtDate(p.createdAt)
+          +     '<span id="la-' + p.id + '">' + (st ? renderLastActivity(st) : '') + '</span></div>'
+          +   '<div class="proj-progress" id="pp-' + p.id + '">' + (st ? renderProgress(st) : '') + '</div>'
+          +   '<div class="proj-stats" id="ps-' + p.id + '">' + (st ? renderStats(st) : '<span class="ps-load">загрузка...</span>') + '</div>'
           + '</div>'
           + '<span class="badge ' + (p.active?'b-green':'b-yellow') + '">' + (p.active?'Активен':'Пауза') + '</span>'
           + '<div class="proj-btns" onclick="event.stopPropagation()">'
@@ -521,6 +583,12 @@
     .pb-sh:hover{border-color:#ca8a04;color:#ca8a04}
 
     .proj-stats{display:flex;align-items:center;gap:5px;margin-top:4px;flex-wrap:wrap}
+    .proj-progress{display:flex;align-items:center;gap:8px;margin-top:5px}
+    .pp-bar{flex:0 0 120px;height:5px;background:#eef0f3;border-radius:3px;overflow:hidden}
+    .pp-fill{height:100%;background:var(--accent);border-radius:3px;transition:width .2s}
+    .pp-txt{font-size:11px;color:var(--muted);white-space:nowrap}
+    .mini-select{border:1px solid var(--border2);border-radius:7px;background:var(--white);color:var(--sec);font-size:12px;font-family:inherit;padding:5px 8px;outline:none;cursor:pointer}
+    .mini-select:focus{border-color:var(--accent)}
     .ps-item{display:flex;align-items:center;gap:3px}
     .ps-lbl{font-size:11px;color:var(--muted)}
     .ps-val{font-size:12px;font-weight:600;color:var(--text)}
@@ -614,7 +682,22 @@
 
 <div class="content">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:12px;flex-wrap:wrap">
-    <div class="section-label" style="margin-bottom:0">Ваши проекты</div>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div class="section-label" style="margin-bottom:0">Ваши проекты</div>
+      <select class="mini-select" onchange="onFilterStatus(this.value)" title="Фильтр по статусу">
+        <option value="all">Все</option>
+        <option value="active">Активные</option>
+        <option value="archived">Архив</option>
+      </select>
+      <select class="mini-select" onchange="onSort(this.value)" title="Сортировка">
+        <option value="name">По названию</option>
+        <option value="created">Сначала новые</option>
+        <option value="conv">По конверсии</option>
+        <option value="leads">По лидам</option>
+        <option value="empty">По остатку базы</option>
+        <option value="activity">По активности</option>
+      </select>
+    </div>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
       <span class="date-lbl">Статистика:</span>
       <div class="seg">
