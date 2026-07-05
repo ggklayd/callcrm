@@ -26,10 +26,94 @@
     const BASE_WEBHOOK = 'https://script.google.com/macros/s/AKfycbxsCQVfeAFrbipFVIlm3rx2f2z0UP8nuJ6z2DuKrUHdcoHsxZimiJP3pr34SJS7SKpb/exec';
 
     window.projects = {};
+    window._statsCache = {};
+
+    // Форматирование даты для статистики
+    function todayStr() {
+      const now = new Date();
+      const pad = n => String(n).padStart(2,'0');
+      return pad(now.getDate()) + '.' + pad(now.getMonth()+1) + '.' + now.getFullYear();
+    }
+
+    // Считает статистику из массива rows (все строки таблицы)
+    function calcStats(rows) {
+      const today = todayStr();
+      const DIALOG_STATUSES    = ['Отказ Сек','Отказ ЛПР','КП Сек','КП ЛПР','Перезвон Сек','Перезвон ЛПР','Лид'];
+      const PROCESSED_STATUSES = ['Отказ Сек','Отказ ЛПР','КП Сек','КП ЛПР','Перезвон Сек','Перезвон ЛПР','Лид'];
+      const CALLBACK_STATUSES  = ['Перезвон Сек','Перезвон ЛПР'];
+      const VOID_STATUSES      = ['Не компания','Частное лицо'];
+
+      let totalCalls = 0, totalDialogs = 0, processedCompanies = 0;
+
+      // rows[0] — заголовки, rows[1+] — данные
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        let rowCounted = false;
+
+        for (let att = 1; att <= 6; att++) {
+          const base   = 35 + (att - 1) * 5;
+          const result = (row[base]     || '').toString().trim();
+          const date   = (row[base + 3] || '').toString().trim().replace(/(\d{2})\.(\d{2})\.(\d{4}).*/, '$1.$2.$3');
+          if (!result || !date) continue;
+          if (date !== today) continue;
+
+          totalCalls++;
+          if (DIALOG_STATUSES.includes(result)) totalDialogs++;
+
+          if (!rowCounted && PROCESSED_STATUSES.includes(result)) {
+            if (CALLBACK_STATUSES.includes(result)) {
+              let voided = false;
+              for (let j = att + 1; j <= 6; j++) {
+                const rj = (row[35 + (j-1)*5] || '').toString().trim();
+                if (VOID_STATUSES.includes(rj)) { voided = true; break; }
+              }
+              if (!voided) { processedCompanies++; rowCounted = true; }
+            } else {
+              processedCompanies++;
+              rowCounted = true;
+            }
+          }
+        }
+      }
+      return { totalCalls, totalDialogs, processedCompanies };
+    }
+
+    // Загружает данные таблицы и считает статистику
+    async function loadProjectStats(projectId, sheetsUrl) {
+      if (!sheetsUrl) return;
+      const match = sheetsUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+      if (!match) return;
+      const spreadsheetId = match[1];
+      try {
+        const url  = BASE_WEBHOOK + '?action=exportSheet&spreadsheetId=' + spreadsheetId;
+        const resp = await fetch(url);
+        const data = await resp.json();
+        if (!data.ok || !data.rows) return;
+        const stats = calcStats(data.rows);
+        window._statsCache[projectId] = stats;
+        const el = document.getElementById('ps-' + projectId);
+        if (el) el.innerHTML = renderStats(stats);
+      } catch(e) { console.warn('Stats:', projectId, e.message); }
+    }
+
+    function renderStats(s) {
+      if (!s) return '<span class="ps-load">—</span>';
+      return '<span class="ps-item"><span class="ps-lbl">Звонков</span><span class="ps-val">' + (s.totalCalls||0) + '</span></span>'
+        + '<span class="ps-dot">·</span>'
+        + '<span class="ps-item"><span class="ps-lbl">Диалогов</span><span class="ps-val ps-blue">' + (s.totalDialogs||0) + '</span></span>'
+        + '<span class="ps-dot">·</span>'
+        + '<span class="ps-item"><span class="ps-lbl">Компаний</span><span class="ps-val ps-green">' + (s.processedCompanies||0) + '</span></span>';
+    }
+
     onSnapshot(collection(db,'admin_projects'), snap => {
       window.projects = {};
       snap.docs.forEach(d => { window.projects[d.id] = {id:d.id,...d.data()}; });
       renderProjects();
+      // Загружаем статистику за сегодня для каждого активного проекта
+      snap.docs.forEach(d => {
+        const p = d.data();
+        if (p.sheets_url) loadProjectStats(d.id, p.sheets_url);
+      });
     });
 
     window._search = '';
@@ -57,7 +141,11 @@
         return '<div class="proj-row" onclick="openProject(\'' + p.id + '\')">'
           + '<div class="proj-av" style="background:' + col + '">' + (p.name||'?')[0].toUpperCase() + '</div>'
           + '<div class="proj-info"><div class="proj-name">' + esc(p.name) + '</div>'
-          + '<div class="proj-meta">' + ((p.managers||[]).length) + ' менеджеров · создан ' + fmtDate(p.createdAt) + '</div></div>'
+          + '<div class="proj-meta">' + ((p.managers||[]).length) + ' менеджеров · создан ' + fmtDate(p.createdAt) + '</div>'
+          + '<div class="proj-stats" id="ps-' + p.id + '">'
+          + (window._statsCache[p.id] ? renderStats(window._statsCache[p.id]) : '<span class="ps-load">загрузка...</span>')
+          + '</div>'
+          + '</div>'
           + '<span class="badge ' + (p.active?'b-green':'b-yellow') + '">' + (p.active?'Активен':'Пауза') + '</span>'
           + '<div class="proj-btns" onclick="event.stopPropagation()">'
           + '<button class="pb pb-mgr" onclick="openProject(\'' + p.id + '\')">&#128100; Менеджеры</button>'
@@ -286,6 +374,14 @@
     .pb-rep:hover{border-color:var(--accent);color:var(--accent)}
     .pb-sh:hover{border-color:#ca8a04;color:#ca8a04}
 
+    .proj-stats{display:flex;align-items:center;gap:5px;margin-top:4px;flex-wrap:wrap}
+    .ps-item{display:flex;align-items:center;gap:3px}
+    .ps-lbl{font-size:11px;color:var(--muted)}
+    .ps-val{font-size:12px;font-weight:600;color:var(--text)}
+    .ps-val.ps-blue{color:#2563eb}
+    .ps-val.ps-green{color:#16a34a}
+    .ps-dot{color:var(--border2);font-size:11px}
+    .ps-load{font-size:11px;color:var(--muted);font-style:italic}
     .badge{font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;white-space:nowrap;flex-shrink:0}
     .b-green{background:#dcfce7;color:#16a34a}
     .b-yellow{background:#fef9c3;color:#ca8a04}
