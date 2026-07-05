@@ -64,6 +64,7 @@
       const VOID_STATUSES     = ['Не компания','Частное лицо'];
 
       let emptyContacts = 0, totalDialogs = 0, totalCompanies = 0;
+      let leadCompanies = 0, kplprCompanies = 0, interestedCompanies = 0;
 
       clients.forEach(c => {
         const org = (c.org_name || '').toString().trim();
@@ -72,12 +73,15 @@
         if (org && !(c['result1'] || '').toString().trim()) emptyContacts++;
 
         let companyCounted = false;
+        let isLead = false, isKplpr = false;   // статусы этой компании (в рамках даты)
         for (let i = 1; i <= 6; i++) {
           const result = (c['result' + i] || '').toString().trim();
           if (!result) continue;
           if (ddmmyyyy && normDate(c['date' + i]) !== ddmmyyyy) continue;  // фильтр по дате
 
           if (DIALOG_STATUSES.includes(result)) totalDialogs++;     // состоявшийся диалог за дату
+          if (result === 'Лид')    isLead  = true;
+          if (result === 'КП ЛПР') isKplpr = true;
 
           // уникальная обработанная компания (перезвон гасится поздним «Не компания»/«Частное лицо»)
           if (!companyCounted && DIALOG_STATUSES.includes(result)) {
@@ -93,8 +97,15 @@
             }
           }
         }
+
+        // лиды / КП ЛПР — на уровне компаний, только среди обработанных
+        if (companyCounted) {
+          if (isLead)  leadCompanies++;
+          if (isKplpr) kplprCompanies++;
+          if (isLead || isKplpr) interestedCompanies++;
+        }
       });
-      return { emptyContacts, totalDialogs, totalCompanies };
+      return { emptyContacts, totalDialogs, totalCompanies, leadCompanies, kplprCompanies, interestedCompanies };
     }
 
     // Загружает клиентов проекта по ВСЕМ менеджерам (тот же action, что и кабинет менеджера)
@@ -142,11 +153,21 @@
 
     function renderStats(s) {
       if (!s) return '<span class="ps-load">—</span>';
-      return '<span class="ps-item"><span class="ps-lbl">Пустых контактов</span><span class="ps-val">' + (s.emptyContacts||0) + '</span></span>'
-        + '<span class="ps-dot">·</span>'
-        + '<span class="ps-item"><span class="ps-lbl">Диалогов</span><span class="ps-val ps-blue">' + (s.totalDialogs||0) + '</span></span>'
-        + '<span class="ps-dot">·</span>'
-        + '<span class="ps-item"><span class="ps-lbl">Компаний</span><span class="ps-val ps-green">' + (s.totalCompanies||0) + '</span></span>';
+      const comp  = s.totalCompanies || 0;
+      const lead  = s.leadCompanies || 0;
+      const kplpr = s.kplprCompanies || 0;
+      const inter = s.interestedCompanies || 0;
+      const pctLead = comp ? Math.round(lead / comp * 100) : 0;
+      const pctInt  = comp ? Math.round(inter / comp * 100) : 0;
+      const item = (lbl, val, cls) => '<span class="ps-item"><span class="ps-lbl">' + lbl + '</span><span class="ps-val' + (cls ? ' ' + cls : '') + '">' + val + '</span></span>';
+      const dot = '<span class="ps-dot">·</span>';
+      return item('Пустых контактов', s.emptyContacts || 0)
+        + dot + item('Диалогов', s.totalDialogs || 0, 'ps-blue')
+        + dot + item('Компаний', comp)
+        + dot + item('Лидов', lead, 'ps-green')
+        + dot + item('КП ЛПР', kplpr, 'ps-indigo')
+        + dot + item('Конв. в лид', pctLead + '%', 'ps-green')
+        + dot + item('Конв. заинт.', pctInt + '%', 'ps-indigo');
     }
 
     // Пересчитывает и рисует статистику проекта из кэша за текущую дату
@@ -457,6 +478,7 @@
     .ps-val{font-size:12px;font-weight:600;color:var(--text)}
     .ps-val.ps-blue{color:#2563eb}
     .ps-val.ps-green{color:#16a34a}
+    .ps-val.ps-indigo{color:#4338ca}
     .ps-dot{color:var(--border2);font-size:11px}
     .ps-load{font-size:11px;color:var(--muted);font-style:italic}
     .badge{font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;white-space:nowrap;flex-shrink:0}
