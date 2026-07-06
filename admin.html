@@ -49,6 +49,28 @@
     }
     function isoToKey(v) { return v ? +v.replace(/-/g, '') : 0; }
 
+    // Парсит время попытки -> {min: минуты от полуночи, hhmm: 'ЧЧ:ММ'}
+    function parseTime(t) {
+      if (t == null || t === '') return { min: 0, hhmm: '' };
+      if (t instanceof Date) {
+        const h = t.getHours(), m = t.getMinutes();
+        return { min: h * 60 + m, hhmm: String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') };
+      }
+      const s = t.toString().trim();
+      const mt = s.match(/(\d{1,2}):(\d{2})/);          // 'ЧЧ:ММ' или 'ЧЧ:ММ:СС'
+      if (mt) return { min: (+mt[1]) * 60 + (+mt[2]), hhmm: String(+mt[1]).padStart(2,'0') + ':' + mt[2] };
+      if (/^\d{4}-/.test(s)) {                          // ISO дата+время
+        const dt = new Date(s);
+        if (!isNaN(dt)) { const h = dt.getHours(), m = dt.getMinutes(); return { min: h*60+m, hhmm: String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') }; }
+      }
+      const num = parseFloat(s);                        // доля суток (0..1) — как хранит Google Sheets
+      if (!isNaN(num) && num > 0 && num < 1) {
+        const tot = Math.round(num * 1440), h = Math.floor(tot / 60), m = tot % 60;
+        return { min: tot, hhmm: String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') };
+      }
+      return { min: 0, hhmm: '' };
+    }
+
     window._dateMode            = 'all';   // 'all' | 'date' | 'period'
     window._statRange           = null;    // null = всего, иначе {fromKey, toKey}
     window._managerClientsCache = {};      // projectId -> { менеджер: клиенты[] }
@@ -69,7 +91,8 @@
 
       let emptyContacts = 0, totalContacts = 0, totalDialogs = 0, totalCompanies = 0;
       let leadCompanies = 0, kplprCompanies = 0, interestedCompanies = 0;
-      let lastActivityKey = 0;   // максимум ГГГГММДД по всем попыткам (не зависит от диапазона)
+      let lastActivityKey = 0, lastActivityTime = '';   // последняя активность (дата + время), не зависит от диапазона
+      let lastActivityDt = 0;    // ключ дата*10000+минуты — чтобы найти самую позднюю попытку
 
       clients.forEach(c => {
         const org = (c.org_name || '').toString().trim();
@@ -83,7 +106,9 @@
           const result = (c['result' + i] || '').toString().trim();
           if (!result) continue;
           const k = dateKey(c['date' + i]);
-          if (k > lastActivityKey) lastActivityKey = k;               // последняя активность — по всем попыткам
+          const pt = parseTime(c['time' + i]);
+          const dt = k * 10000 + pt.min;                              // дата + время
+          if (dt > lastActivityDt) { lastActivityDt = dt; lastActivityKey = k; lastActivityTime = pt.hhmm; }  // самая поздняя попытка
           if (range && (!k || k < range.fromKey || k > range.toKey)) continue;  // фильтр по дате/периоду
 
           if (DIALOG_STATUSES.includes(result)) totalDialogs++;
@@ -112,7 +137,7 @@
           if (isLead || isKplpr) interestedCompanies++;
         }
       });
-      return { emptyContacts, totalContacts, totalDialogs, totalCompanies, leadCompanies, kplprCompanies, interestedCompanies, lastActivityKey };
+      return { emptyContacts, totalContacts, totalDialogs, totalCompanies, leadCompanies, kplprCompanies, interestedCompanies, lastActivityKey, lastActivityTime };
     }
 
     // Загружает клиентов проекта по ВСЕМ менеджерам (тот же action, что и кабинет менеджера)
@@ -202,7 +227,7 @@
       const today = new Date(); today.setHours(0, 0, 0, 0);
       const diff = Math.round((today - then) / 86400000);
       let txt;
-      if (diff <= 0)      txt = 'сегодня';
+      if (diff <= 0)      txt = s.lastActivityTime || 'сегодня';   // сегодня → показываем время последней попытки
       else if (diff === 1) txt = 'вчера';
       else if (diff < 5)   txt = diff + ' дня назад';
       else                 txt = diff + ' дней назад';
