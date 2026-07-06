@@ -324,19 +324,15 @@
         const st  = window._statsCache[p.id];
         return '<div class="proj-row" onclick="openProject(\'' + p.id + '\')">'
           + '<div class="proj-av" style="background:' + col + '">' + (p.name||'?')[0].toUpperCase() + '</div>'
-          + '<div class="proj-info">'
+          + '<div class="proj-left">'
           +   '<div class="proj-name">' + esc(p.name) + '</div>'
           +   '<div class="proj-meta">' + ((p.managers||[]).length) + ' менеджеров · создан ' + fmtDate(p.createdAt)
           +     '<span id="la-' + p.id + '">' + (st ? renderLastActivity(st) : '') + '</span></div>'
           +   '<div class="proj-progress" id="pp-' + p.id + '">' + (st ? renderProgress(st) : '') + '</div>'
-          +   '<div class="proj-stats" id="ps-' + p.id + '">' + (st ? renderStats(st) : '<span class="ps-load">загрузка...</span>') + '</div>'
           + '</div>'
+          + '<div class="proj-stats" id="ps-' + p.id + '">' + (st ? renderStats(st) : '<span class="ps-load">загрузка...</span>') + '</div>'
           + '<span class="badge ' + (p.active?'b-green':'b-yellow') + '">' + (p.active?'Активен':'Пауза') + '</span>'
-          + '<div class="proj-btns" onclick="event.stopPropagation()">'
-          + '<button class="pb pb-mgr" onclick="openProject(\'' + p.id + '\')">&#128100; Менеджеры</button>'
-          + '<button class="pb pb-rep" onclick="openLink(\'' + BASE + '/report.html?project=' + p.id + '\')">&#128065; Отчёт</button>'
-          + (p.sheets_url?'<button class="pb pb-sh" onclick="openLink(\'' + p.sheets_url + '\')">&#128202; Таблица</button>':'')
-          + '</div></div>';
+          + '</div>';
       }).join('');
     }
 
@@ -565,31 +561,25 @@
     .btn-new{margin-left:auto;padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:opacity .12s}
     .btn-new:hover{opacity:.88}
 
-    .content{max-width:820px;margin:0 auto;padding:24px 20px 60px}
+    .content{max-width:1240px;margin:0 auto;padding:24px 20px 60px}
     .section-label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:12px}
 
     .proj-list{display:flex;flex-direction:column;gap:8px}
     .proj-row{background:var(--white);border:1px solid var(--border);border-radius:var(--rad);padding:14px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;transition:border-color .12s;box-shadow:var(--shadow)}
     .proj-row:hover{border-color:var(--border2)}
     .proj-av{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600;color:#fff;flex-shrink:0}
-    .proj-info{flex:1;min-width:0}
-    .proj-name{font-size:14px;font-weight:600;color:var(--text)}
+    .proj-left{flex:0 0 300px;min-width:0}
+    .proj-name{font-size:14px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .proj-meta{font-size:12px;color:var(--muted);margin-top:1px}
-    .proj-btns{display:flex;gap:6px;flex-wrap:wrap}
-    .pb{padding:5px 12px;border-radius:20px;border:1px solid var(--border2);background:var(--white);color:var(--sec);font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;transition:all .12s}
-    .pb:hover{border-color:#9ca3af;color:var(--text)}
-    .pb-mgr:hover{border-color:#16a34a;color:#16a34a}
-    .pb-rep:hover{border-color:var(--accent);color:var(--accent)}
-    .pb-sh:hover{border-color:#ca8a04;color:#ca8a04}
 
-    .proj-stats{display:flex;align-items:center;gap:5px;margin-top:4px;flex-wrap:wrap}
+    .proj-stats{display:flex;align-items:center;gap:5px;flex:1;min-width:0;flex-wrap:wrap}
     .proj-progress{display:flex;align-items:center;gap:8px;margin-top:5px}
     .pp-bar{flex:0 0 120px;height:5px;background:#eef0f3;border-radius:3px;overflow:hidden}
     .pp-fill{height:100%;background:var(--accent);border-radius:3px;transition:width .2s}
     .pp-txt{font-size:11px;color:var(--muted);white-space:nowrap}
     .mini-select{border:1px solid var(--border2);border-radius:7px;background:var(--white);color:var(--sec);font-size:12px;font-family:inherit;padding:5px 8px;outline:none;cursor:pointer}
     .mini-select:focus{border-color:var(--accent)}
-    .ps-item{display:flex;align-items:center;gap:3px}
+    .ps-item{display:flex;align-items:center;gap:3px;white-space:nowrap}
     .ps-lbl{font-size:11px;color:var(--muted)}
     .ps-val{font-size:12px;font-weight:600;color:var(--text)}
     .ps-val.ps-blue{color:#2563eb}
