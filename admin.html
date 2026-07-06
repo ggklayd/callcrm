@@ -8,7 +8,7 @@
 
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-    import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, serverTimestamp }
+    import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, serverTimestamp, query, where }
       from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
     const firebaseConfig = {
@@ -314,6 +314,74 @@
       });
     });
 
+    // ── Перезвоны (Firestore callbacks, только активные) ──
+    window._callbacksByProject = {};
+    function cbTime(c) { return c.callbackAt?.toDate ? c.callbackAt.toDate().getTime() : new Date(c.callbackAt).getTime(); }
+    function cbStats(list) {
+      const now = Date.now();
+      let missed = 0;
+      (list || []).forEach(c => { if (cbTime(c) < now) missed++; });
+      return { total: (list || []).length, missed };
+    }
+    function cbLineHtml(projectId) {
+      const { total, missed } = cbStats(window._callbacksByProject[projectId]);
+      if (!total) return '<span class="cb-none">Перезвонов нет</span>';
+      return 'Перезвоны <b class="cb-num">' + total + '</b>' + (missed ? ' · просрочено <b class="cb-miss">' + missed + '</b>' : '');
+    }
+    function renderProjectCallbacks(projectId) {
+      const el = document.getElementById('cb-' + projectId);
+      if (el) el.innerHTML = cbLineHtml(projectId);
+    }
+
+    onSnapshot(query(collection(db, 'callbacks'), where('done', '==', false)), snap => {
+      const byProj = {};
+      snap.docs.forEach(d => {
+        const c = { id: d.id, ...d.data() };
+        (byProj[c.project] = byProj[c.project] || []).push(c);
+      });
+      window._callbacksByProject = byProj;
+      Object.keys(window.projects || {}).forEach(pid => renderProjectCallbacks(pid));
+      if (window._cbModalProject) renderCallbacksModal(window._cbModalProject);
+    });
+
+    // Модалка перезвонов проекта (по менеджерам, просроченные сверху и красным)
+    window.openCallbacks = function (projectId) {
+      window._cbModalProject = projectId;
+      renderCallbacksModal(projectId);
+      openModal('m-callbacks');
+    };
+    window.renderCallbacksModal = function (projectId) {
+      const p = window.projects[projectId];
+      document.getElementById('cb-modal-name').textContent = p ? p.name : '';
+      const list = (window._callbacksByProject[projectId] || []).slice();
+      const now  = Date.now();
+      const missedTotal = list.filter(c => cbTime(c) < now).length;
+      document.getElementById('cb-modal-sum').innerHTML = list.length
+        ? 'Всего ' + list.length + (missedTotal ? ' · <span class="cb-miss">просрочено ' + missedTotal + '</span>' : '')
+        : '';
+      const body = document.getElementById('cb-modal-body');
+      if (!list.length) { body.innerHTML = '<div class="cb-empty">Активных перезвонов нет</div>'; return; }
+      const byMgr = {};
+      list.forEach(c => { const m = c.manager || '—'; (byMgr[m] = byMgr[m] || []).push(c); });
+      body.innerHTML = Object.keys(byMgr).sort().map(mgr => {
+        const items = byMgr[mgr].sort((a, b) => cbTime(a) - cbTime(b));   // ранние (просроченные) сверху
+        const mMissed = items.filter(c => cbTime(c) < now).length;
+        const rows = items.map(c => {
+          const t = cbTime(c), missed = t < now;
+          const dt = new Date(t).toLocaleString('ru-RU', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' });
+          return '<div class="cbi' + (missed ? ' cbi-missed' : '') + '">'
+            + '<div class="cbi-top"><span class="cbi-org">' + esc(c.org_name || '—') + '</span>'
+            + (c.phone ? '<span class="cbi-phone">' + esc(c.phone) + '</span>' : '') + '</div>'
+            + '<div class="cbi-meta"><span class="cbi-when">' + (missed ? '&#9888;&#65039; ' : '&#128197; ') + dt + '</span>'
+            + (c.lastResult ? '<span class="cbi-res">' + esc(c.lastResult) + '</span>' : '') + '</div>'
+            + (c.note ? '<div class="cbi-note">' + esc(c.note) + '</div>' : '')
+            + '</div>';
+        }).join('');
+        return '<div class="cb-grp"><div class="cb-grp-head">' + esc(mgr)
+          + ' <span class="cb-grp-cnt">' + items.length + (mMissed ? ' · <span class="cb-miss">' + mMissed + ' просроч.</span>' : '') + '</span></div>'
+          + rows + '</div>';
+      }).join('');
+    };
     window._search       = '';
     window._sortBy       = 'name';
     window._filterStatus = 'all';
@@ -374,6 +442,7 @@
           +   '<div class="proj-meta">' + ((p.managers||[]).length) + ' менеджеров · создан ' + fmtDate(p.createdAt)
           +     '<span id="la-' + p.id + '">' + (st ? renderLastActivity(st) : '') + '</span></div>'
           +   '<div class="proj-progress" id="pp-' + p.id + '">' + (st ? renderProgress(st) : '') + '</div>'
+          +   '<div class="proj-cb" id="cb-' + p.id + '" onclick="event.stopPropagation();openCallbacks(\'' + p.id + '\')">' + cbLineHtml(p.id) + '</div>'
           + '</div>'
           + '<div class="proj-stats" id="ps-' + p.id + '">' + (st ? renderStats(st) : '<span class="ps-load">загрузка...</span>') + '</div>'
           + '<span class="badge ' + (p.active?'b-green':'b-yellow') + '">' + (p.active?'Активен':'Пауза') + '</span>'
@@ -623,6 +692,28 @@
     .pp-bar{flex:0 0 180px;height:8px;background:#eef0f3;border-radius:4px;overflow:hidden}
     .pp-fill{height:100%;background:var(--accent);border-radius:4px;transition:width .2s}
     .pp-txt{font-size:13px;color:var(--muted);white-space:nowrap}
+    /* перезвоны — строка в карточке */
+    .proj-cb{margin-top:6px;font-size:13px;color:var(--muted);cursor:pointer;width:fit-content}
+    .proj-cb:hover{color:var(--text)}
+    .proj-cb .cb-num{color:var(--text);font-weight:600}
+    .cb-miss{color:#dc2626;font-weight:600}
+    .cb-none{color:var(--muted)}
+    /* перезвоны — модалка */
+    .cb-modal-body{margin-top:14px;max-height:60vh;overflow-y:auto}
+    .cb-empty{color:var(--muted);font-size:13px;text-align:center;padding:24px 0}
+    .cb-grp{margin-bottom:16px}
+    .cb-grp-head{font-size:13px;font-weight:600;color:var(--text);padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:8px}
+    .cb-grp-cnt{font-weight:400;color:var(--muted);font-size:12px}
+    .cbi{padding:8px 10px;border-radius:8px;background:var(--bg);margin-bottom:6px;border-left:3px solid var(--border2)}
+    .cbi-missed{background:#fef2f2;border-left-color:#dc2626}
+    .cbi-top{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+    .cbi-org{font-size:13px;font-weight:600;color:var(--text)}
+    .cbi-phone{font-size:12px;color:var(--sec)}
+    .cbi-meta{display:flex;align-items:center;gap:10px;margin-top:2px;flex-wrap:wrap}
+    .cbi-when{font-size:12px;color:var(--sec)}
+    .cbi-missed .cbi-when{color:#dc2626;font-weight:600}
+    .cbi-res{font-size:11px;color:var(--muted);background:var(--white);border:1px solid var(--border);border-radius:5px;padding:1px 6px}
+    .cbi-note{font-size:12px;color:var(--sec);margin-top:4px;font-style:italic}
     .mini-select{border:1px solid var(--border2);border-radius:7px;background:var(--white);color:var(--sec);font-size:12px;font-family:inherit;padding:5px 8px;outline:none;cursor:pointer}
     .mini-select:focus{border-color:var(--accent)}
     .ps-item{display:flex;align-items:center;gap:3px;white-space:nowrap}
@@ -829,6 +920,16 @@
       <button class="btn-ghost" onclick="closeModal('m-confirm')">Отмена</button>
       <button id="confirm-ok" class="btn-primary" onclick="confirmDo()">Подтвердить</button>
     </div>
+  </div>
+</div>
+
+<!-- МОДАЛКА ПЕРЕЗВОНОВ -->
+<div class="modal-bg" id="m-callbacks">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('m-callbacks')">&#10005;</button>
+    <div class="modal-title">Перезвоны — <span id="cb-modal-name"></span></div>
+    <div class="modal-sub" id="cb-modal-sum"></div>
+    <div class="cb-modal-body" id="cb-modal-body"></div>
   </div>
 </div>
 
