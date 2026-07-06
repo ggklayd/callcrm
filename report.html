@@ -162,7 +162,7 @@
           + '<td class="td-sec">' + esc(c.phone || '—') + '</td>'
           + '<td class="td-sec">' + esc(c.region || '—') + '</td>'
           + '<td class="td-pri">' + esc(c.lpr_name || '—') + '</td>'
-          + '<td>' + (c.result ? '<span class="badge ' + cls + '">' + esc(c.result) + '</span>' : '<span class="td-muted">—</span>') + '</td>'
+          + '<td class="td-badge">' + (c.result ? '<span class="badge ' + cls + '">' + esc(c.result) + '</span>' : '<span class="td-muted">—</span>') + '</td>'
           + '<td class="td-sec td-trunc">' + esc(c.note || '—') + '</td>'
           + '<td class="td-sec">' + esc(c.date || '—') + '</td>'
           + '</tr>';
@@ -261,6 +261,7 @@
     thead tr { border-bottom:1px solid var(--border); }
     th { padding:10px 14px; text-align:left; font-size:11px; font-weight:500; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; background:#fafafa; }
     td { padding:10px 14px; border-bottom:1px solid var(--border); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    td.td-badge { overflow:visible; text-overflow:clip; }
     tr:last-child td { border-bottom:none; }
     tr:hover td { background:#fafafa; }
     .td-org { font-weight:600; color:var(--text); }
