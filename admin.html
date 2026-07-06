@@ -211,21 +211,30 @@
       const dpc     = comp ? (s.totalDialogs / comp).toFixed(1) : '—';   // диалогов на 1 компанию
       const att     = s.attemptedCompanies || 0;                          // обзвоненные компании
       const pctReach  = att  ? Math.round((s.firstReachedCompanies || 0) / att * 100) + '%' : '—';   // первичный дозвон = диалог по результату 1 / обзвоненные
-      const pctLpr    = comp ? Math.round((s.lprCompanies || 0)     / comp * 100) + '%' : '—';  // выход на ЛПР / Компаний
-      const pctRefuse = comp ? Math.round((s.refusedCompanies || 0) / comp * 100) + '%' : '—';  // отказ ЛПР / Компаний
+      const lprN      = comp ? Math.round((s.lprCompanies || 0)     / comp * 100) : null;  // выход на ЛПР / Компаний
+      const refuseN   = comp ? Math.round((s.refusedCompanies || 0) / comp * 100) : null;  // отказ ЛПР / Компаний
+      const pctLpr    = lprN    !== null ? lprN + '%'    : '—';
+      const pctRefuse = refuseN !== null ? refuseN + '%' : '—';
+      // условная подсветка: пустых <100 красный / 100–300 оранжевый; выход на ЛПР <30% красный; отказов ЛПР >40% красный
+      const empty     = s.emptyContacts || 0;
+      const emptyCls  = empty < 100 ? 'ps-red' : (empty <= 300 ? 'ps-orange' : '');
+      const lprCls    = (lprN    !== null && lprN    < 30) ? 'ps-red' : '';
+      const refuseCls = (refuseN !== null && refuseN > 40) ? 'ps-red' : '';
+      const leadCls   = (comp > 0 && pctLead < 1) ? 'ps-red' : '';   // конв. в лид <1% красный
+      const intCls    = (comp > 0 && pctInt  < 3) ? 'ps-red' : '';   // конв. в заинтересованных <3% красный
       const item = (lbl, val, cls) => '<span class="ps-item"><span class="ps-lbl">' + lbl + '</span><span class="ps-val' + (cls ? ' ' + cls : '') + '">' + val + '</span></span>';
       const dot = '<span class="ps-dot">·</span>';
-      const row1 = item('Пустых контактов', s.emptyContacts || 0)
+      const row1 = item('Пустых контактов', empty, emptyCls)
         + dot + item('Диалогов', s.totalDialogs || 0)
         + dot + item('Компаний', comp)
         + dot + item('Диал./комп.', dpc)
         + dot + item('Лидов', lead)
         + dot + item('КП ЛПР', kplpr);
-      const row2 = item('Конв. в лид', pctLead + '%')
-        + dot + item('Конв. заинт.', pctInt + '%')
+      const row2 = item('Конв. в лид', pctLead + '%', leadCls)
+        + dot + item('Конв. заинт.', pctInt + '%', intCls)
         + dot + item('Первич. дозвон', pctReach)
-        + dot + item('Выход на ЛПР', pctLpr)
-        + dot + item('Отказов ЛПР', pctRefuse);
+        + dot + item('Выход на ЛПР', pctLpr, lprCls)
+        + dot + item('Отказов ЛПР', pctRefuse, refuseCls);
       return '<div class="ps-row">' + row1 + '</div><div class="ps-row">' + row2 + '</div>';
     }
 
@@ -623,6 +632,7 @@
     .ps-val.ps-green{color:#16a34a}
     .ps-val.ps-indigo{color:#4338ca}
     .ps-val.ps-red{color:#dc2626}
+    .ps-val.ps-orange{color:#ea580c}
     .ps-dot{color:var(--border2);font-size:13px}
     .ps-load{font-size:11px;color:var(--muted);font-style:italic}
     .badge{font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;white-space:nowrap;flex-shrink:0}
