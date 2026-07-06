@@ -216,17 +216,18 @@
       const pctRefuse = comp ? Math.round((s.refusedCompanies || 0) / comp * 100) + '%' : '—';  // отказ ЛПР / Компаний
       const item = (lbl, val, cls) => '<span class="ps-item"><span class="ps-lbl">' + lbl + '</span><span class="ps-val' + (cls ? ' ' + cls : '') + '">' + val + '</span></span>';
       const dot = '<span class="ps-dot">·</span>';
-      return item('Пустых контактов', s.emptyContacts || 0)
+      const row1 = item('Пустых контактов', s.emptyContacts || 0)
         + dot + item('Диалогов', s.totalDialogs || 0, 'ps-blue')
         + dot + item('Компаний', comp)
         + dot + item('Диал./комп.', dpc)
         + dot + item('Лидов', lead, 'ps-green')
-        + dot + item('КП ЛПР', kplpr, 'ps-indigo')
-        + dot + item('Конв. в лид', pctLead + '%', 'ps-green')
+        + dot + item('КП ЛПР', kplpr, 'ps-indigo');
+      const row2 = item('Конв. в лид', pctLead + '%', 'ps-green')
         + dot + item('Конв. заинт.', pctInt + '%', 'ps-indigo')
         + dot + item('Первич. дозвон', pctReach)
         + dot + item('Выход на ЛПР', pctLpr)
         + dot + item('Отказов ЛПР', pctRefuse, 'ps-red');
+      return '<div class="ps-row">' + row1 + '</div><div class="ps-row">' + row2 + '</div>';
     }
 
     // Полоска прогресса базы: обработано (есть результат 1) из всех именованных контактов
@@ -620,7 +621,8 @@
     .proj-name{font-size:14px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .proj-meta{font-size:12px;color:var(--muted);margin-top:1px}
 
-    .proj-stats{display:flex;align-items:center;gap:5px;flex:1;min-width:0;flex-wrap:wrap}
+    .proj-stats{display:flex;flex-direction:column;gap:5px;flex:1;min-width:0}
+    .ps-row{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
     .proj-progress{display:flex;align-items:center;gap:8px;margin-top:5px}
     .pp-bar{flex:0 0 120px;height:5px;background:#eef0f3;border-radius:3px;overflow:hidden}
     .pp-fill{height:100%;background:var(--accent);border-radius:3px;transition:width .2s}
@@ -628,13 +630,13 @@
     .mini-select{border:1px solid var(--border2);border-radius:7px;background:var(--white);color:var(--sec);font-size:12px;font-family:inherit;padding:5px 8px;outline:none;cursor:pointer}
     .mini-select:focus{border-color:var(--accent)}
     .ps-item{display:flex;align-items:center;gap:3px;white-space:nowrap}
-    .ps-lbl{font-size:11px;color:var(--muted)}
-    .ps-val{font-size:12px;font-weight:600;color:var(--text)}
+    .ps-lbl{font-size:13px;color:var(--muted)}
+    .ps-val{font-size:14px;font-weight:600;color:var(--text)}
     .ps-val.ps-blue{color:#2563eb}
     .ps-val.ps-green{color:#16a34a}
     .ps-val.ps-indigo{color:#4338ca}
     .ps-val.ps-red{color:#dc2626}
-    .ps-dot{color:var(--border2);font-size:11px}
+    .ps-dot{color:var(--border2);font-size:13px}
     .ps-load{font-size:11px;color:var(--muted);font-style:italic}
     .badge{font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;white-space:nowrap;flex-shrink:0}
     .b-green{background:#dcfce7;color:#16a34a}
