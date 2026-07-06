@@ -88,9 +88,12 @@
       const DIALOG_STATUSES   = ['Отказ Сек','Отказ ЛПР','КП Сек','КП ЛПР','Перезвон Сек','Перезвон ЛПР','Лид'];
       const CALLBACK_STATUSES = ['Перезвон Сек','Перезвон ЛПР'];
       const VOID_STATUSES     = ['Не компания','Частное лицо'];
+      const LPR_STATUSES      = ['Отказ ЛПР','КП ЛПР','Перезвон ЛПР','Лид'];   // контакт с ЛПР
+      const REFUSE_STATUSES   = ['Отказ ЛПР'];   // отказ на уровне ЛПР
 
       let emptyContacts = 0, totalContacts = 0, totalDialogs = 0, totalCompanies = 0;
       let leadCompanies = 0, kplprCompanies = 0, interestedCompanies = 0;
+      let attemptedCompanies = 0, reachedCompanies = 0, refusedCompanies = 0, lprCompanies = 0;   // для % дозвона/ЛПР/отказов
       let lastActivityKey = 0, lastActivityTime = '';   // последняя активность (дата + время), не зависит от диапазона
       let lastActivityDt = 0;    // ключ дата*10000+минуты — чтобы найти самую позднюю попытку
 
@@ -101,7 +104,8 @@
         if (org && !(c['result1'] || '').toString().trim()) emptyContacts++;
 
         let companyCounted = false;
-        let isLead = false, isKplpr = false;   // статусы этой компании (в рамках диапазона)
+        let isLead = false, isKplpr = false;                                           // статусы этой компании (в рамках диапазона)
+        let attempted = false, reached = false, refused = false, reachedLPR = false;   // для % дозвона/ЛПР/отказов
         for (let i = 1; i <= 6; i++) {
           const result = (c['result' + i] || '').toString().trim();
           if (!result) continue;
@@ -111,7 +115,10 @@
           if (dt > lastActivityDt) { lastActivityDt = dt; lastActivityKey = k; lastActivityTime = pt.hhmm; }  // самая поздняя попытка
           if (range && (!k || k < range.fromKey || k > range.toKey)) continue;  // фильтр по дате/периоду
 
-          if (DIALOG_STATUSES.includes(result)) totalDialogs++;
+          attempted = true;                                          // есть результат в диапазоне = компания обзвонена
+          if (DIALOG_STATUSES.includes(result)) { totalDialogs++; reached = true; }
+          if (REFUSE_STATUSES.includes(result)) refused    = true;
+          if (LPR_STATUSES.includes(result))    reachedLPR = true;
           if (result === 'Лид')    isLead  = true;
           if (result === 'КП ЛПР') isKplpr = true;
 
@@ -136,8 +143,16 @@
           if (isKplpr) kplprCompanies++;
           if (isLead || isKplpr) interestedCompanies++;
         }
+
+        // % дозвона/ЛПР/отказов — по обзвоненным именованным компаниям
+        if (org && attempted) {
+          attemptedCompanies++;
+          if (reached)    reachedCompanies++;
+          if (reachedLPR) lprCompanies++;
+          if (refused)    refusedCompanies++;
+        }
       });
-      return { emptyContacts, totalContacts, totalDialogs, totalCompanies, leadCompanies, kplprCompanies, interestedCompanies, lastActivityKey, lastActivityTime };
+      return { emptyContacts, totalContacts, totalDialogs, totalCompanies, leadCompanies, kplprCompanies, interestedCompanies, lastActivityKey, lastActivityTime, attemptedCompanies, reachedCompanies, refusedCompanies, lprCompanies };
     }
 
     // Загружает клиентов проекта по ВСЕМ менеджерам (тот же action, что и кабинет менеджера)
@@ -196,6 +211,10 @@
       const pctLead = comp ? Math.round(lead / comp * 100) : 0;
       const pctInt  = comp ? Math.round(inter / comp * 100) : 0;
       const dpc     = comp ? (s.totalDialogs / comp).toFixed(1) : '—';   // диалогов на 1 компанию
+      const att     = s.attemptedCompanies || 0;                          // база для % — обзвоненные компании
+      const pctReach  = att ? Math.round((s.reachedCompanies || 0) / att * 100) + '%' : '—';
+      const pctLpr    = att ? Math.round((s.lprCompanies || 0)     / att * 100) + '%' : '—';
+      const pctRefuse = att ? Math.round((s.refusedCompanies || 0) / att * 100) + '%' : '—';
       const item = (lbl, val, cls) => '<span class="ps-item"><span class="ps-lbl">' + lbl + '</span><span class="ps-val' + (cls ? ' ' + cls : '') + '">' + val + '</span></span>';
       const dot = '<span class="ps-dot">·</span>';
       return item('Пустых контактов', s.emptyContacts || 0)
@@ -205,7 +224,10 @@
         + dot + item('Лидов', lead, 'ps-green')
         + dot + item('КП ЛПР', kplpr, 'ps-indigo')
         + dot + item('Конв. в лид', pctLead + '%', 'ps-green')
-        + dot + item('Конв. заинт.', pctInt + '%', 'ps-indigo');
+        + dot + item('Конв. заинт.', pctInt + '%', 'ps-indigo')
+        + dot + item('Дозвон', pctReach)
+        + dot + item('Выход на ЛПР', pctLpr)
+        + dot + item('Отказов ЛПР', pctRefuse, 'ps-red');
     }
 
     // Полоска прогресса базы: обработано (есть результат 1) из всех именованных контактов
@@ -612,6 +634,7 @@
     .ps-val.ps-blue{color:#2563eb}
     .ps-val.ps-green{color:#16a34a}
     .ps-val.ps-indigo{color:#4338ca}
+    .ps-val.ps-red{color:#dc2626}
     .ps-dot{color:var(--border2);font-size:11px}
     .ps-load{font-size:11px;color:var(--muted);font-style:italic}
     .badge{font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;white-space:nowrap;flex-shrink:0}
