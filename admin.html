@@ -170,11 +170,13 @@
       const inter = s.interestedCompanies || 0;
       const pctLead = comp ? Math.round(lead / comp * 100) : 0;
       const pctInt  = comp ? Math.round(inter / comp * 100) : 0;
+      const dpc     = comp ? (s.totalDialogs / comp).toFixed(1) : '—';   // диалогов на 1 компанию
       const item = (lbl, val, cls) => '<span class="ps-item"><span class="ps-lbl">' + lbl + '</span><span class="ps-val' + (cls ? ' ' + cls : '') + '">' + val + '</span></span>';
       const dot = '<span class="ps-dot">·</span>';
       return item('Пустых контактов', s.emptyContacts || 0)
         + dot + item('Диалогов', s.totalDialogs || 0, 'ps-blue')
         + dot + item('Компаний', comp)
+        + dot + item('Диал./комп.', dpc)
         + dot + item('Лидов', lead, 'ps-green')
         + dot + item('КП ЛПР', kplpr, 'ps-indigo')
         + dot + item('Конв. в лид', pctLead + '%', 'ps-green')
@@ -561,7 +563,7 @@
     .btn-new{margin-left:auto;padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:opacity .12s}
     .btn-new:hover{opacity:.88}
 
-    .content{max-width:1240px;margin:0 auto;padding:24px 20px 60px}
+    .content{max-width:1300px;margin:0 auto;padding:24px 20px 60px}
     .section-label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:12px}
 
     .proj-list{display:flex;flex-direction:column;gap:8px}
