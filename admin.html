@@ -437,8 +437,7 @@
           +   '<div class="proj-cb" id="cb-' + p.id + '" onclick="event.stopPropagation();openCallbacks(\'' + p.id + '\')">' + cbLineHtml(p.id) + '</div>'
           + '</div>'
           + '<div class="proj-stats" id="ps-' + p.id + '">' + (st ? renderStats(st) : '<span class="ps-load">загрузка...</span>') + '</div>'
-          + (p.stage ? '<span class="stage-badge">' + esc(p.stage) + '</span>' : '')
-          + '<span class="badge ' + (p.active?'b-green':'b-yellow') + '">' + (p.active?'Активен':'Пауза') + '</span>'
+          + (function(){ const sg = p.stage || (p.active===false?'В архиве':''); return sg ? '<span class="stage-badge' + (sg==='В архиве'?' stage-arch':'') + '">' + esc(sg) + '</span>' : ''; })()
           + '</div>';
       }).join('');
     }
@@ -464,9 +463,7 @@
       if (!p) return;
       window._dpId = id;
       document.getElementById('dp-name').textContent   = p.name;
-      document.getElementById('dp-status').textContent = p.active ? 'Активен' : 'Пауза';
-      document.getElementById('dp-status').className   = 'badge ' + (p.active ? 'b-green' : 'b-yellow');
-      document.getElementById('dp-stage').value        = p.stage || '';
+      document.getElementById('dp-stage').value        = p.stage || (p.active === false ? 'В архиве' : '');
       document.getElementById('dp-lr').textContent     = BASE + '/report.html?project=' + id;
       document.getElementById('dp-ls').textContent     = p.sheets_url || '—';
 
@@ -568,7 +565,7 @@
     // Стадия проекта
     window.setProjectStage = async function (stage) {
       if (!window._dpId) return;
-      try { await setDoc(doc(db, 'admin_projects', window._dpId), { stage }, { merge: true }); }
+      try { await setDoc(doc(db, 'admin_projects', window._dpId), { stage, active: stage !== 'В архиве' }, { merge: true }); }
       catch (e) { alert('Ошибка: ' + e.message); }
     };
 
@@ -704,7 +701,7 @@
       closeModal('m-confirm');
 
       if (action === 'archive') {
-        await setDoc(doc(db,'admin_projects',id), { active: false }, { merge: true });
+        await setDoc(doc(db,'admin_projects',id), { active: false, stage: 'В архиве' }, { merge: true });
         closeModal('m-detail');
         toast('Проект переведён в архив · ссылки работают');
       }
@@ -787,6 +784,7 @@
     .ps-load{font-size:11px;color:var(--muted);font-style:italic}
     .badge{font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;white-space:nowrap;flex-shrink:0}
     .stage-badge{font-size:11px;font-weight:600;color:#6d28d9;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:20px;padding:3px 10px;white-space:nowrap;flex-shrink:0}
+    .stage-badge.stage-arch{color:#6b7280;background:#f3f4f6;border-color:#e5e7eb}
     .dp-stage-lbl{font-size:12px;color:var(--muted)}
     .dp-stage-sel{border:1px solid var(--border2);border-radius:6px;background:var(--white);color:var(--text);font-size:12px;font-family:inherit;padding:4px 8px;outline:none;cursor:pointer}
     .dp-stage-sel:focus{border-color:var(--accent)}
@@ -940,7 +938,6 @@
       <div>
         <div class="dp-name-row"><div class="modal-title" id="dp-name"></div><button class="dp-edit" id="dp-edit-btn" onclick="startRename()" title="Переименовать">&#9998;</button></div>
         <div style="margin-top:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <span id="dp-status" class="badge b-green"></span>
           <span class="dp-stage-lbl">Стадия:</span>
           <select id="dp-stage" class="dp-stage-sel" onchange="setProjectStage(this.value)">
             <option value="">— не задана —</option>
@@ -950,6 +947,7 @@
             <option value="Подготовка проекта">Подготовка проекта</option>
             <option value="Ушел в паузу">Ушел в паузу</option>
             <option value="Завис в подготовке">Завис в подготовке</option>
+            <option value="В архиве">В архиве</option>
           </select>
         </div>
       </div>
