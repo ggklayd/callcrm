@@ -347,20 +347,27 @@
     // Модалка перезвонов проекта (по менеджерам, просроченные сверху и красным)
     window.openCallbacks = function (projectId) {
       window._cbModalProject = projectId;
+      window._cbFilter = 'all';
       renderCallbacksModal(projectId);
       openModal('m-callbacks');
+    };
+    window.setCbFilter = function (f) {
+      window._cbFilter = f;
+      if (window._cbModalProject) renderCallbacksModal(window._cbModalProject);
     };
     window.renderCallbacksModal = function (projectId) {
       const p = window.projects[projectId];
       document.getElementById('cb-modal-name').textContent = p ? p.name : '';
-      const list = (window._callbacksByProject[projectId] || []).slice();
+      const all = (window._callbacksByProject[projectId] || []).slice();
       const now  = Date.now();
-      const missedTotal = list.filter(c => cbTime(c) < now).length;
-      document.getElementById('cb-modal-sum').innerHTML = list.length
-        ? 'Всего ' + list.length + (missedTotal ? ' · <span class="cb-miss">просрочено ' + missedTotal + '</span>' : '')
-        : '';
+      const missedTotal = all.filter(c => cbTime(c) < now).length;
+      const filter = window._cbFilter || 'all';
+      document.getElementById('cb-modal-sum').innerHTML =
+          '<span class="cb-tab' + (filter === 'all' ? ' cb-tab-on' : '') + '" onclick="setCbFilter(\'all\')">Всего ' + all.length + '</span>'
+        + '<span class="cb-tab cb-tab-miss' + (filter === 'missed' ? ' cb-tab-on' : '') + '" onclick="setCbFilter(\'missed\')">просрочено ' + missedTotal + '</span>';
+      const list = filter === 'missed' ? all.filter(c => cbTime(c) < now) : all;
       const body = document.getElementById('cb-modal-body');
-      if (!list.length) { body.innerHTML = '<div class="cb-empty">Активных перезвонов нет</div>'; return; }
+      if (!list.length) { body.innerHTML = '<div class="cb-empty">' + (filter === 'missed' ? 'Просроченных нет' : 'Активных перезвонов нет') + '</div>'; return; }
       const byMgr = {};
       list.forEach(c => { const m = c.manager || '—'; (byMgr[m] = byMgr[m] || []).push(c); });
       body.innerHTML = Object.keys(byMgr).sort().map(mgr => {
@@ -701,6 +708,11 @@
     /* перезвоны — модалка */
     .cb-modal-body{margin-top:14px;max-height:60vh;overflow-y:auto}
     .cb-empty{color:var(--muted);font-size:13px;text-align:center;padding:24px 0}
+    .cb-tab{display:inline-block;padding:3px 10px;margin-right:6px;border-radius:6px;font-size:13px;color:var(--sec);cursor:pointer;border:1px solid transparent}
+    .cb-tab:hover{background:var(--bg)}
+    .cb-tab-on{background:#eff6ff;border-color:#93c5fd;color:var(--accent);font-weight:600}
+    .cb-tab-miss{color:#dc2626}
+    .cb-tab-miss.cb-tab-on{background:#fef2f2;border-color:#fca5a5;color:#dc2626}
     .cb-grp{margin-bottom:16px}
     .cb-grp-head{font-size:13px;font-weight:600;color:var(--text);padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:8px}
     .cb-grp-cnt{font-weight:400;color:var(--muted);font-size:12px}
