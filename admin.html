@@ -341,6 +341,7 @@
       });
       window._callbacksByProject = byProj;
       Object.keys(window.projects || {}).forEach(pid => renderProjectCallbacks(pid));
+      if (window._sortBy === 'missedcb') renderProjects();
       if (window._cbModalProject) renderCallbacksModal(window._cbModalProject);
     });
 
@@ -414,6 +415,7 @@
         case 'leads':    return (a,b) => (statOf(b.id).leadCompanies || 0) - (statOf(a.id).leadCompanies || 0);
         case 'empty':    return (a,b) => (statOf(b.id).emptyContacts || 0) - (statOf(a.id).emptyContacts || 0);
         case 'activity': return (a,b) => (statOf(b.id).lastActivityKey || 0) - (statOf(a.id).lastActivityKey || 0);
+        case 'missedcb': return (a,b) => cbStats(window._callbacksByProject[b.id]).missed - cbStats(window._callbacksByProject[a.id]).missed;
         case 'name':
         default:         return (a,b) => (a.name || '').localeCompare(b.name || '', 'ru');
       }
@@ -505,6 +507,18 @@
     };
 
     // Статистика по каждому менеджеру проекта (в модалке), за текущий диапазон
+    // Компактная последняя активность: время сегодня / вчера / N дн.
+    function lastActShort(s) {
+      const k = s && s.lastActivityKey || 0;
+      if (!k) return '—';
+      const y = Math.floor(k / 10000), m = Math.floor(k / 100) % 100, d = k % 100;
+      const then = new Date(y, m - 1, d); const today = new Date(); today.setHours(0, 0, 0, 0);
+      const diff = Math.round((today - then) / 86400000);
+      if (diff <= 0)  return s.lastActivityTime || 'сегодня';
+      if (diff === 1) return 'вчера';
+      return diff + ' дн.';
+    }
+
     window.renderManagerStats = function (projectId) {
       const p = window.projects[projectId];
       if (!p) return;
@@ -516,14 +530,56 @@
         const s = calcStatsFromClients(perMgr[m], window._statRange);
         const comp = s.totalCompanies || 0;
         const pctLead = comp ? Math.round((s.leadCompanies || 0) / comp * 100) : 0;
+        const total = s.totalContacts || 0, done = Math.max(0, total - (s.emptyContacts || 0));
+        const now = Date.now();
+        const mCbs = (window._callbacksByProject[projectId] || []).filter(c => (c.manager || '') === m);
+        const mMissed = mCbs.filter(c => cbTime(c) < now).length;
         el.innerHTML =
             '<span class="mst-item">Диалогов <b>' + (s.totalDialogs || 0) + '</b></span>'
           + '<span class="mst-item">Компаний <b>' + comp + '</b></span>'
           + '<span class="mst-item">Лидов <b class="mst-green">' + (s.leadCompanies || 0) + '</b></span>'
           + '<span class="mst-item">КП ЛПР <b class="mst-indigo">' + (s.kplprCompanies || 0) + '</b></span>'
-          + '<span class="mst-item">Конв. <b class="mst-green">' + pctLead + '%</b></span>';
+          + '<span class="mst-item">Конв. <b class="mst-green">' + pctLead + '%</b></span>'
+          + '<span class="mst-item">Обработано <b>' + done + '/' + total + '</b></span>'
+          + '<span class="mst-item">Активность <b>' + lastActShort(s) + '</b></span>'
+          + '<span class="mst-item">Перезвоны <b>' + mCbs.length + '</b>' + (mMissed ? ' · <b class="mst-red">' + mMissed + ' просроч.</b>' : '') + '</span>';
       });
     };
+
+    // Переименование проекта
+    window.startRename = function () {
+      const p = window.projects[window._dpId];
+      if (!p) return;
+      const nameEl = document.getElementById('dp-name');
+      const btn = document.getElementById('dp-edit-btn');
+      if (btn) btn.style.display = 'none';
+      nameEl.innerHTML = '';
+      const inp = document.createElement('input');
+      inp.className = 'dp-rename-inp';
+      inp.value = p.name || '';
+      const ok = document.createElement('button');
+      ok.className = 'dp-rename-btn'; ok.textContent = '\u2713'; ok.title = 'Сохранить';
+      ok.onclick = () => saveRename(inp.value);
+      const cancel = document.createElement('button');
+      cancel.className = 'dp-rename-btn dp-rename-x'; cancel.textContent = '\u2715'; cancel.title = 'Отмена';
+      cancel.onclick = () => finishRename();
+      nameEl.appendChild(inp); nameEl.appendChild(ok); nameEl.appendChild(cancel);
+      inp.focus(); inp.select();
+      inp.onkeydown = e => { if (e.key === 'Enter') saveRename(inp.value); if (e.key === 'Escape') finishRename(); };
+    };
+    async function saveRename(newName) {
+      const name = (newName || '').trim();
+      if (!name) { finishRename(); return; }
+      try { await setDoc(doc(db, 'admin_projects', window._dpId), { name }, { merge: true }); }
+      catch (e) { alert('Ошибка переименования: ' + e.message); }
+      finishRename(name);
+    }
+    function finishRename(name) {
+      const p = window.projects[window._dpId];
+      document.getElementById('dp-name').textContent = name || (p ? p.name : '');
+      const btn = document.getElementById('dp-edit-btn');
+      if (btn) btn.style.display = '';
+    }
 
     window.addManager = async function() {
       const id   = window._dpId;
@@ -809,6 +865,14 @@
     .mst-item b{color:var(--text);font-weight:600}
     .mst-item b.mst-green{color:#16a34a}
     .mst-item b.mst-indigo{color:#4338ca}
+    .mst-item b.mst-red{color:#dc2626}
+    .dp-name-row{display:flex;align-items:center;gap:8px}
+    .dp-edit{background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;padding:2px 5px;border-radius:5px;line-height:1}
+    .dp-edit:hover{color:var(--accent);background:var(--bg)}
+    .dp-rename-inp{font-size:16px;font-weight:600;padding:4px 8px;border:1px solid var(--border2);border-radius:6px;font-family:inherit;outline:none;min-width:220px}
+    .dp-rename-inp:focus{border-color:var(--accent)}
+    .dp-rename-btn{background:none;border:none;cursor:pointer;font-size:16px;padding:2px 6px;color:#16a34a}
+    .dp-rename-btn.dp-rename-x{color:var(--muted)}
     .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--text);color:#fff;border-radius:7px;padding:10px 20px;font-size:13px;font-weight:500;opacity:0;transition:all .2s;z-index:200;pointer-events:none;white-space:nowrap}
     .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   </style>
@@ -837,6 +901,7 @@
         <option value="leads">По лидам</option>
         <option value="empty">По остатку базы</option>
         <option value="activity">По активности</option>
+        <option value="missedcb">По просроченным</option>
       </select>
     </div>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -878,7 +943,7 @@
     <button class="modal-close" onclick="closeModal('m-detail')">&#10005;</button>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
       <div>
-        <div class="modal-title" id="dp-name"></div>
+        <div class="dp-name-row"><div class="modal-title" id="dp-name"></div><button class="dp-edit" id="dp-edit-btn" onclick="startRename()" title="Переименовать">&#9998;</button></div>
         <div style="margin-top:5px;display:flex;align-items:center;gap:8px">
           <span id="dp-status" class="badge b-green"></span>
           <span style="font-size:11px;color:var(--muted)">ID: <span id="dp-id" style="font-family:monospace"></span></span>
