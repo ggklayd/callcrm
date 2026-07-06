@@ -93,7 +93,7 @@
 
       let emptyContacts = 0, totalContacts = 0, totalDialogs = 0, totalCompanies = 0;
       let leadCompanies = 0, kplprCompanies = 0, interestedCompanies = 0;
-      let attemptedCompanies = 0, reachedCompanies = 0, refusedCompanies = 0, lprCompanies = 0;   // для % дозвона/ЛПР/отказов
+      let attemptedCompanies = 0, refusedCompanies = 0, lprCompanies = 0, firstReachedCompanies = 0;   // обзвонено, отказ ЛПР, выход на ЛПР, первичный дозвон
       let lastActivityKey = 0, lastActivityTime = '';   // последняя активность (дата + время), не зависит от диапазона
       let lastActivityDt = 0;    // ключ дата*10000+минуты — чтобы найти самую позднюю попытку
 
@@ -105,7 +105,7 @@
 
         let companyCounted = false;
         let isLead = false, isKplpr = false;                                           // статусы этой компании (в рамках диапазона)
-        let attempted = false, reached = false, refused = false, reachedLPR = false;   // для % дозвона/ЛПР/отказов
+        let attempted = false, refused = false, reachedLPR = false, firstReached = false;   // для % дозвона/ЛПР/отказов
         for (let i = 1; i <= 6; i++) {
           const result = (c['result' + i] || '').toString().trim();
           if (!result) continue;
@@ -116,7 +116,8 @@
           if (range && (!k || k < range.fromKey || k > range.toKey)) continue;  // фильтр по дате/периоду
 
           attempted = true;                                          // есть результат в диапазоне = компания обзвонена
-          if (DIALOG_STATUSES.includes(result)) { totalDialogs++; reached = true; }
+          if (i === 1 && DIALOG_STATUSES.includes(result)) firstReached = true;   // первичный дозвон — диалог по результату 1
+          if (DIALOG_STATUSES.includes(result)) totalDialogs++;
           if (REFUSE_STATUSES.includes(result)) refused    = true;
           if (LPR_STATUSES.includes(result))    reachedLPR = true;
           if (result === 'Лид')    isLead  = true;
@@ -137,22 +138,20 @@
           }
         }
 
-        // лиды / КП ЛПР — на уровне компаний, только среди обработанных
+        // лиды / КП ЛПР / выход на ЛПР / отказ ЛПР — на уровне обработанных компаний (Компаний)
         if (companyCounted) {
           if (isLead)  leadCompanies++;
           if (isKplpr) kplprCompanies++;
           if (isLead || isKplpr) interestedCompanies++;
+          if (reachedLPR) lprCompanies++;     // выход на ЛПР
+          if (refused)    refusedCompanies++;  // отказ ЛПР
         }
 
-        // % дозвона/ЛПР/отказов — по обзвоненным именованным компаниям
-        if (org && attempted) {
-          attemptedCompanies++;
-          if (reached)    reachedCompanies++;
-          if (reachedLPR) lprCompanies++;
-          if (refused)    refusedCompanies++;
-        }
+        // обзвоненные именованные компании — знаменатель для % дозвона
+        if (org && attempted) attemptedCompanies++;
+        if (org && firstReached) firstReachedCompanies++;   // дозвонились с первого звонка
       });
-      return { emptyContacts, totalContacts, totalDialogs, totalCompanies, leadCompanies, kplprCompanies, interestedCompanies, lastActivityKey, lastActivityTime, attemptedCompanies, reachedCompanies, refusedCompanies, lprCompanies };
+      return { emptyContacts, totalContacts, totalDialogs, totalCompanies, leadCompanies, kplprCompanies, interestedCompanies, lastActivityKey, lastActivityTime, attemptedCompanies, refusedCompanies, lprCompanies, firstReachedCompanies };
     }
 
     // Загружает клиентов проекта по ВСЕМ менеджерам (тот же action, что и кабинет менеджера)
@@ -211,10 +210,10 @@
       const pctLead = comp ? Math.round(lead / comp * 100) : 0;
       const pctInt  = comp ? Math.round(inter / comp * 100) : 0;
       const dpc     = comp ? (s.totalDialogs / comp).toFixed(1) : '—';   // диалогов на 1 компанию
-      const att     = s.attemptedCompanies || 0;                          // база для % — обзвоненные компании
-      const pctReach  = att ? Math.round((s.reachedCompanies || 0) / att * 100) + '%' : '—';
-      const pctLpr    = att ? Math.round((s.lprCompanies || 0)     / att * 100) + '%' : '—';
-      const pctRefuse = att ? Math.round((s.refusedCompanies || 0) / att * 100) + '%' : '—';
+      const att     = s.attemptedCompanies || 0;                          // обзвоненные компании
+      const pctReach  = att  ? Math.round((s.firstReachedCompanies || 0) / att * 100) + '%' : '—';   // первичный дозвон = диалог по результату 1 / обзвоненные
+      const pctLpr    = comp ? Math.round((s.lprCompanies || 0)     / comp * 100) + '%' : '—';  // выход на ЛПР / Компаний
+      const pctRefuse = comp ? Math.round((s.refusedCompanies || 0) / comp * 100) + '%' : '—';  // отказ ЛПР / Компаний
       const item = (lbl, val, cls) => '<span class="ps-item"><span class="ps-lbl">' + lbl + '</span><span class="ps-val' + (cls ? ' ' + cls : '') + '">' + val + '</span></span>';
       const dot = '<span class="ps-dot">·</span>';
       return item('Пустых контактов', s.emptyContacts || 0)
@@ -225,7 +224,7 @@
         + dot + item('КП ЛПР', kplpr, 'ps-indigo')
         + dot + item('Конв. в лид', pctLead + '%', 'ps-green')
         + dot + item('Конв. заинт.', pctInt + '%', 'ps-indigo')
-        + dot + item('Дозвон', pctReach)
+        + dot + item('Первич. дозвон', pctReach)
         + dot + item('Выход на ЛПР', pctLpr)
         + dot + item('Отказов ЛПР', pctRefuse, 'ps-red');
     }
