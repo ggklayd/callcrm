@@ -454,6 +454,7 @@
           +   '<div class="proj-cb" id="cb-' + p.id + '" onclick="event.stopPropagation();openCallbacks(\'' + p.id + '\')">' + cbLineHtml(p.id) + '</div>'
           + '</div>'
           + '<div class="proj-stats" id="ps-' + p.id + '">' + (st ? renderStats(st) : '<span class="ps-load">загрузка...</span>') + '</div>'
+          + (p.stage ? '<span class="stage-badge">' + esc(p.stage) + '</span>' : '')
           + '<span class="badge ' + (p.active?'b-green':'b-yellow') + '">' + (p.active?'Активен':'Пауза') + '</span>'
           + '</div>';
       }).join('');
@@ -482,7 +483,7 @@
       document.getElementById('dp-name').textContent   = p.name;
       document.getElementById('dp-status').textContent = p.active ? 'Активен' : 'Пауза';
       document.getElementById('dp-status').className   = 'badge ' + (p.active ? 'b-green' : 'b-yellow');
-      document.getElementById('dp-id').textContent     = id;
+      document.getElementById('dp-stage').value        = p.stage || '';
       document.getElementById('dp-lr').textContent     = BASE + '/report.html?project=' + id;
       document.getElementById('dp-ls').textContent     = p.sheets_url || '—';
 
@@ -580,6 +581,13 @@
       const btn = document.getElementById('dp-edit-btn');
       if (btn) btn.style.display = '';
     }
+
+    // Стадия проекта
+    window.setProjectStage = async function (stage) {
+      if (!window._dpId) return;
+      try { await setDoc(doc(db, 'admin_projects', window._dpId), { stage }, { merge: true }); }
+      catch (e) { alert('Ошибка: ' + e.message); }
+    };
 
     window.addManager = async function() {
       const id   = window._dpId;
@@ -795,6 +803,10 @@
     .ps-dot{color:var(--border2);font-size:13px}
     .ps-load{font-size:11px;color:var(--muted);font-style:italic}
     .badge{font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;white-space:nowrap;flex-shrink:0}
+    .stage-badge{font-size:11px;font-weight:600;color:#6d28d9;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:20px;padding:3px 10px;white-space:nowrap;flex-shrink:0}
+    .dp-stage-lbl{font-size:12px;color:var(--muted)}
+    .dp-stage-sel{border:1px solid var(--border2);border-radius:6px;background:var(--white);color:var(--text);font-size:12px;font-family:inherit;padding:4px 8px;outline:none;cursor:pointer}
+    .dp-stage-sel:focus{border-color:var(--accent)}
     .b-green{background:#dcfce7;color:#16a34a}
     .b-yellow{background:#fef9c3;color:#ca8a04}
 
@@ -944,9 +956,18 @@
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
       <div>
         <div class="dp-name-row"><div class="modal-title" id="dp-name"></div><button class="dp-edit" id="dp-edit-btn" onclick="startRename()" title="Переименовать">&#9998;</button></div>
-        <div style="margin-top:5px;display:flex;align-items:center;gap:8px">
+        <div style="margin-top:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
           <span id="dp-status" class="badge b-green"></span>
-          <span style="font-size:11px;color:var(--muted)">ID: <span id="dp-id" style="font-family:monospace"></span></span>
+          <span class="dp-stage-lbl">Стадия:</span>
+          <select id="dp-stage" class="dp-stage-sel" onchange="setProjectStage(this.value)">
+            <option value="">— не задана —</option>
+            <option value="Подготовка">Подготовка</option>
+            <option value="Возврат">Возврат</option>
+            <option value="Выполнен">Выполнен</option>
+            <option value="Подготовка проекта">Подготовка проекта</option>
+            <option value="Ушел в паузу">Ушел в паузу</option>
+            <option value="Завис в подготовке">Завис в подготовке</option>
+          </select>
         </div>
       </div>
     </div>
