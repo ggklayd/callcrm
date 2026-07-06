@@ -72,7 +72,8 @@
     }
 
     window._statRange           = null;    // null = всего, иначе {fromKey, toKey}
-    window._managerClientsCache = {};      // projectId -> { менеджер: клиенты[] }
+    window._managerClientsCache = {};      // projectId -> { менеджер: клиенты[] } (устар., не используется)
+    window._managerStatsCache   = {};      // projectId -> { менеджер: stats } (с сервера)
 
     // По умолчанию — режим «Всего»
     (function () {
@@ -153,8 +154,8 @@
       return { emptyContacts, totalContacts, totalDialogs, totalCompanies, leadCompanies, kplprCompanies, interestedCompanies, lastActivityKey, lastActivityTime, attemptedCompanies, refusedCompanies, lprCompanies, firstReachedCompanies };
     }
 
-    // Загружает клиентов проекта по ВСЕМ менеджерам (тот же action, что и кабинет менеджера)
-    // и считает статистику всего проекта.
+    // Тянет статистику проекта с сервера (getProjectStats): один лёгкий запрос
+    // вместо getAllClients по каждому менеджеру. Считает и проект, и менеджеров.
     async function loadProjectStats(projectId, sheetsUrl, managers) {
       const put = html => { const e = document.getElementById('ps-' + projectId); if (e) e.innerHTML = html; };
 
@@ -166,34 +167,21 @@
       const mgrs = (managers || []).filter(Boolean);
       if (!mgrs.length) { put('<span class="ps-load">нет менеджеров</span>'); return; }
 
+      const r = window._statRange;
       try {
-        // тянем строки каждого менеджера параллельно
-        const perManager = {};
-        const results = await Promise.all(mgrs.map(async m => {
-          try {
-            const url  = BASE_WEBHOOK + '?action=getAllClients&manager=' + encodeURIComponent(m) + '&spreadsheetId=' + spreadsheetId;
-            const resp = await fetch(url);
-            const data = await resp.json();
-            const arr = (data.ok && Array.isArray(data.clients)) ? data.clients : [];
-            perManager[m] = arr;
-            return arr;
-          } catch(e) { perManager[m] = []; return []; }
-        }));
-        window._managerClientsCache[projectId] = perManager;   // для статистики по менеджерам
+        let url = BASE_WEBHOOK + '?action=getProjectStats&spreadsheetId=' + spreadsheetId
+                + '&managers=' + encodeURIComponent(mgrs.join(','));
+        if (r) url += '&from=' + r.fromKey + '&to=' + r.toKey;
+        const resp = await fetch(url);
+        const data = await resp.json();
+        if (!data.ok) { put('<span class="ps-load">ошибка</span>'); return; }
 
-        // объединяем строки всех менеджеров, дедуп по номеру строки
-        const seen = {}, allClients = [];
-        results.flat().forEach(c => {
-          const key = c.rowNum != null ? 'r' + c.rowNum : (c.org_name || '') + '|' + (c.phone1 || '');
-          if (seen[key]) return;
-          seen[key] = true;
-          allClients.push(c);
-        });
+        window._statsCache[projectId]        = data.project  || {};
+        window._managerStatsCache[projectId] = data.managers || {};
 
-        if (!allClients.length) { put('<span class="ps-load">нет данных</span>'); return; }
-
-        window._clientsCache[projectId] = allClients;   // кэшируем сырые строки
-        renderProjectStatsFor(projectId);               // считаем за выбранную дату
+        renderProjectStatsFor(projectId);
+        if (window._dpId === projectId) renderManagerStats(projectId);
+        scheduleResort();   // если сортировка по статистике — перестроить список
       } catch(e) {
         console.warn('[stats]', projectId, e.message);
         put('<span class="ps-load">ошибка загрузки</span>');
@@ -264,16 +252,12 @@
       return ' · активность ' + txt;
     }
 
-    // Пересчитывает и рисует статистику проекта из кэша за текущий диапазон
+    // Рисует статистику проекта из _statsCache (считает сервер)
     function renderProjectStatsFor(projectId) {
-      const clients = window._clientsCache[projectId];
-      if (!clients) return;
-      const stats = calcStatsFromClients(clients, window._statRange);
-      window._statsCache[projectId] = stats;
-      const ps = document.getElementById('ps-' + projectId); if (ps) ps.innerHTML = renderStats(stats);
-      const pp = document.getElementById('pp-' + projectId); if (pp) pp.innerHTML = renderProgress(stats);
-      const la = document.getElementById('la-' + projectId); if (la) la.innerHTML = renderLastActivity(stats);
-      scheduleResort();   // если сортировка по статистике — перестроить список
+      const stats = window._statsCache[projectId];
+      const ps = document.getElementById('ps-' + projectId); if (ps) ps.innerHTML = stats ? renderStats(stats)        : '<span class="ps-load">загрузка...</span>';
+      const pp = document.getElementById('pp-' + projectId); if (pp) pp.innerHTML = stats ? renderProgress(stats)     : '';
+      const la = document.getElementById('la-' + projectId); if (la) la.innerHTML = stats ? renderLastActivity(stats) : '';
     }
 
     // Собирает диапазон дат из текущего режима и полей
@@ -287,13 +271,12 @@
       return { fromKey: f, toKey: t };
     }
 
-    // Пересчёт всех проектов из кэша под текущий диапазон (без повторной загрузки)
+    // Смена диапазона — перезапрашиваем статистику под новый период (считает сервер)
     window.applyDateFilter = function () {
       window._statRange = computeRange();
       const btn = document.getElementById('dm-all');
-      if (btn) btn.classList.toggle('active', !window._statRange);   // «Всего» подсвечено, когда даты не заданы
-      Object.keys(window._clientsCache).forEach(pid => renderProjectStatsFor(pid));
-      if (window._dpId) renderManagerStats(window._dpId);   // если открыта модалка — обновим её
+      if (btn) btn.classList.toggle('active', !window._statRange);
+      Object.values(window.projects || {}).forEach(p => loadProjectStats(p.id, p.sheets_url, p.managers));
     };
 
     // Сброс к «Всего» — очищает поля периода
@@ -523,12 +506,12 @@
     window.renderManagerStats = function (projectId) {
       const p = window.projects[projectId];
       if (!p) return;
-      const perMgr = window._managerClientsCache[projectId];
+      const perMgr = window._managerStatsCache[projectId];
       (p.managers || []).forEach((m, i) => {
         const el = document.getElementById('mgrst-' + projectId + '-' + i);
         if (!el) return;
         if (!perMgr || !perMgr[m]) { el.innerHTML = '<span class="ps-load">загрузка статистики...</span>'; return; }
-        const s = calcStatsFromClients(perMgr[m], window._statRange);
+        const s = perMgr[m];
         const comp = s.totalCompanies || 0;
         const pctLead = comp ? Math.round((s.leadCompanies || 0) / comp * 100) : 0;
         const total = s.totalContacts || 0, done = Math.max(0, total - (s.emptyContacts || 0));
