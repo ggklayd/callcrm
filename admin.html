@@ -71,7 +71,6 @@
       return { min: 0, hhmm: '' };
     }
 
-    window._dateMode            = 'all';   // 'all' | 'date' | 'period'
     window._statRange           = null;    // null = всего, иначе {fromKey, toKey}
     window._managerClientsCache = {};      // projectId -> { менеджер: клиенты[] }
 
@@ -217,16 +216,16 @@
       const item = (lbl, val, cls) => '<span class="ps-item"><span class="ps-lbl">' + lbl + '</span><span class="ps-val' + (cls ? ' ' + cls : '') + '">' + val + '</span></span>';
       const dot = '<span class="ps-dot">·</span>';
       const row1 = item('Пустых контактов', s.emptyContacts || 0)
-        + dot + item('Диалогов', s.totalDialogs || 0, 'ps-blue')
+        + dot + item('Диалогов', s.totalDialogs || 0)
         + dot + item('Компаний', comp)
         + dot + item('Диал./комп.', dpc)
-        + dot + item('Лидов', lead, 'ps-green')
-        + dot + item('КП ЛПР', kplpr, 'ps-indigo');
-      const row2 = item('Конв. в лид', pctLead + '%', 'ps-green')
-        + dot + item('Конв. заинт.', pctInt + '%', 'ps-indigo')
+        + dot + item('Лидов', lead)
+        + dot + item('КП ЛПР', kplpr);
+      const row2 = item('Конв. в лид', pctLead + '%')
+        + dot + item('Конв. заинт.', pctInt + '%')
         + dot + item('Первич. дозвон', pctReach)
         + dot + item('Выход на ЛПР', pctLpr)
-        + dot + item('Отказов ЛПР', pctRefuse, 'ps-red');
+        + dot + item('Отказов ЛПР', pctRefuse);
       return '<div class="ps-row">' + row1 + '</div><div class="ps-row">' + row2 + '</div>';
     }
 
@@ -270,16 +269,9 @@
 
     // Собирает диапазон дат из текущего режима и полей
     function computeRange() {
-      const mode = window._dateMode;
-      if (mode === 'all') return null;
-      if (mode === 'date') {
-        const k = isoToKey(document.getElementById('stat-date')?.value);
-        return k ? { fromKey: k, toKey: k } : null;
-      }
-      // период
       let f = isoToKey(document.getElementById('stat-from')?.value);
       let t = isoToKey(document.getElementById('stat-to')?.value);
-      if (!f && !t) return null;
+      if (!f && !t) return null;   // нет дат = всего
       if (!f) f = t;
       if (!t) t = f;
       if (f > t) { const x = f; f = t; t = x; }
@@ -289,21 +281,16 @@
     // Пересчёт всех проектов из кэша под текущий диапазон (без повторной загрузки)
     window.applyDateFilter = function () {
       window._statRange = computeRange();
+      const btn = document.getElementById('dm-all');
+      if (btn) btn.classList.toggle('active', !window._statRange);   // «Всего» подсвечено, когда даты не заданы
       Object.keys(window._clientsCache).forEach(pid => renderProjectStatsFor(pid));
       if (window._dpId) renderManagerStats(window._dpId);   // если открыта модалка — обновим её
     };
 
-    // Переключение режима: Всего / Дата / Период
-    window.setDateMode = function (mode) {
-      window._dateMode = mode;
-      ['all', 'date', 'period'].forEach(m => {
-        const b = document.getElementById('dm-' + m);
-        if (b) b.classList.toggle('active', m === mode);
-      });
-      const single = document.getElementById('date-single');
-      const period = document.getElementById('date-period');
-      if (single) single.style.display = mode === 'date'   ? 'flex' : 'none';
-      if (period) period.style.display = mode === 'period' ? 'flex' : 'none';
+    // Сброс к «Всего» — очищает поля периода
+    window.setAllTime = function () {
+      const f = document.getElementById('stat-from'); if (f) f.value = '';
+      const t = document.getElementById('stat-to');   if (t) t.value = '';
       window.applyDateFilter();
     };
 
@@ -617,16 +604,16 @@
     .proj-row{background:var(--white);border:1px solid var(--border);border-radius:var(--rad);padding:14px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;transition:border-color .12s;box-shadow:var(--shadow)}
     .proj-row:hover{border-color:var(--border2)}
     .proj-av{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600;color:#fff;flex-shrink:0}
-    .proj-left{flex:0 0 300px;min-width:0}
+    .proj-left{flex:0 0 380px;min-width:0}
     .proj-name{font-size:14px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .proj-meta{font-size:12px;color:var(--muted);margin-top:1px}
 
     .proj-stats{display:flex;flex-direction:column;gap:5px;flex:1;min-width:0}
     .ps-row{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
-    .proj-progress{display:flex;align-items:center;gap:8px;margin-top:5px}
-    .pp-bar{flex:0 0 120px;height:5px;background:#eef0f3;border-radius:3px;overflow:hidden}
-    .pp-fill{height:100%;background:var(--accent);border-radius:3px;transition:width .2s}
-    .pp-txt{font-size:11px;color:var(--muted);white-space:nowrap}
+    .proj-progress{display:flex;align-items:center;gap:10px;margin-top:6px}
+    .pp-bar{flex:0 0 180px;height:8px;background:#eef0f3;border-radius:4px;overflow:hidden}
+    .pp-fill{height:100%;background:var(--accent);border-radius:4px;transition:width .2s}
+    .pp-txt{font-size:13px;color:var(--muted);white-space:nowrap}
     .mini-select{border:1px solid var(--border2);border-radius:7px;background:var(--white);color:var(--sec);font-size:12px;font-family:inherit;padding:5px 8px;outline:none;cursor:pointer}
     .mini-select:focus{border-color:var(--accent)}
     .ps-item{display:flex;align-items:center;gap:3px;white-space:nowrap}
@@ -741,15 +728,8 @@
     </div>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
       <span class="date-lbl">Статистика:</span>
-      <div class="seg">
-        <button id="dm-all"    class="date-toggle" onclick="setDateMode('all')">Всего</button>
-        <button id="dm-date"   class="date-toggle" onclick="setDateMode('date')">Дата</button>
-        <button id="dm-period" class="date-toggle" onclick="setDateMode('period')">Период</button>
-      </div>
-      <div id="date-single" class="date-wrap" style="display:none">
-        <input type="date" id="stat-date" onchange="applyDateFilter()">
-      </div>
-      <div id="date-period" style="display:none;align-items:center;gap:6px">
+      <button id="dm-all" class="date-toggle" onclick="setAllTime()">Всего</button>
+      <div style="display:flex;align-items:center;gap:6px">
         <div class="date-wrap"><input type="date" id="stat-from" onchange="applyDateFilter()"></div>
         <span class="date-lbl">—</span>
         <div class="date-wrap"><input type="date" id="stat-to" onchange="applyDateFilter()"></div>
