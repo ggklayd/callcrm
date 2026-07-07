@@ -814,7 +814,7 @@
 
     .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:100;align-items:center;justify-content:center;padding:20px}
     .modal-bg.open{display:flex}
-    .modal{background:var(--white);border-radius:12px;padding:24px;width:100%;max-width:460px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 30px rgba(0,0,0,.15)}
+    .modal{background:var(--white);border-radius:12px;padding:24px;width:100%;max-width:620px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 30px rgba(0,0,0,.15)}
     .modal-title{font-size:17px;font-weight:600;margin-bottom:4px}
     .modal-sub{font-size:13px;color:var(--sec);margin-bottom:20px}
     .modal-close{float:right;background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;margin-top:-4px}
@@ -836,6 +836,12 @@
     .detail-label{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px}
     .detail-section{margin-bottom:20px}
     .link-row{display:flex;align-items:center;gap:8px;background:#f9fafb;border:1px solid var(--border);border-radius:7px;padding:8px 12px;margin-bottom:8px}
+    .link-btns{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+    .link-name{font-size:13px;color:var(--text);font-weight:500;flex:1}
+    .lbtn{padding:7px 16px;border-radius:7px;border:1px solid var(--border2);background:var(--white);color:var(--sec);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;transition:all .12s}
+    .lbtn:hover{border-color:var(--accent);color:var(--accent)}
+    .lbtn.lbtn-open{background:var(--accent);border-color:var(--accent);color:#fff}
+    .lbtn.lbtn-open:hover{opacity:.9;color:#fff}
     .link-icon{font-size:14px;flex-shrink:0}
     .link-text{flex:1;font-size:12px;color:var(--sec);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:monospace}
     .copy-btn{padding:4px 10px;background:var(--white);border:1px solid var(--border2);color:var(--sec);border-radius:6px;font-size:11px;cursor:pointer;flex-shrink:0;transition:all .12s}
@@ -976,8 +982,20 @@
 
     <div class="detail-section">
       <div class="detail-label">Ссылки проекта</div>
-      <div class="link-row"><span class="link-icon">&#128065;</span><span class="link-text" id="dp-lr"></span><button class="copy-btn" onclick="copyText(document.getElementById('dp-lr').textContent)">Копировать</button></div>
-      <div class="link-row"><span class="link-icon">&#128202;</span><span class="link-text" id="dp-ls"></span><button class="copy-btn" onclick="openLink(document.getElementById('dp-ls').textContent)">Открыть</button></div>
+      <span id="dp-lr" style="display:none"></span>
+      <span id="dp-ls" style="display:none"></span>
+      <div class="link-btns">
+        <span class="link-icon">&#128065;</span>
+        <span class="link-name">Отчёт заказчику</span>
+        <button class="lbtn lbtn-open" onclick="openLink(document.getElementById('dp-lr').textContent)">Открыть</button>
+        <button class="lbtn" onclick="copyText(document.getElementById('dp-lr').textContent)">Копировать</button>
+      </div>
+      <div class="link-btns">
+        <span class="link-icon">&#128202;</span>
+        <span class="link-name">Google Таблица</span>
+        <button class="lbtn lbtn-open" onclick="openLink(document.getElementById('dp-ls').textContent)">Открыть</button>
+        <button class="lbtn" onclick="copyText(document.getElementById('dp-ls').textContent)">Копировать</button>
+      </div>
     </div>
 
     <div class="detail-section">
