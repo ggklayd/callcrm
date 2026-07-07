@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Отчёт по проекту — CallCRM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+    import { getFirestore, doc, getDoc }
+      from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+    const firebaseConfig = {
+      apiKey:            "AIzaSyD2ssxYMzVt2IUQ2ujRg_7hu2EO3XwtwNg",
+      authDomain:        "ds-group-c8bb2.firebaseapp.com",
+      projectId:         "ds-group-c8bb2",
+      storageBucket:     "ds-group-c8bb2.firebasestorage.app",
+      messagingSenderId: "238132930383",
+      appId:             "1:238132930383:web:ba08ba7e5f3b38a98c073a",
+    };
+    const app = initializeApp(firebaseConfig);
+    const db  = getFirestore(app);
+
+    const BASE_WEBHOOK = 'https://script.google.com/macros/s/AKfycbxsCQVfeAFrbipFVIlm3rx2f2z0UP8nuJ6z2DuKrUHdcoHsxZimiJP3pr34SJS7SKpb/exec';
+
+    const params  = new URLSearchParams(location.search);
+    const PROJECT = params.get('project') || '';
+
+    let allRows = [], _raw = [], _range = null, _sid = '', _mParam = '';
+
+    // Цвета статусов обзвона (как в таблице/админке)
+    const STATUS_COLORS = {
+      'Лид':          'st-lid',
+      'КП Сек':       'st-kp',   'КП ЛПР':       'st-kp',
+      'Перезвон Сек': 'st-perz', 'Перезвон ЛПР': 'st-perz',
+      'Отказ Сек':    'st-otkaz','Отказ ЛПР':    'st-otkaz',
+      'Недозвон':     'st-nedoz',
+      'Не абонент':   'st-gray', 'Не компания':  'st-gray',
+      'Частное лицо': 'st-gray', 'Дубль':        'st-gray',
+    };
+    // Группа статуса для фильтров
+    function statusGroup(r) {
+      if (r === 'Лид') return 'лид';
+      if (r === 'КП Сек' || r === 'КП ЛПР') return 'кп';
+      if (r === 'Перезвон Сек' || r === 'Перезвон ЛПР') return 'перезвон';
+      if (r === 'Отказ Сек' || r === 'Отказ ЛПР') return 'отказ';
+      if (r === 'Недозвон' || r === 'Не абонент') return 'недозвон';
+      return 'прочее';
+    }
+    function dateKey(s) { s = (s || '').toString().trim(); const m = s.match(/^(\d{2})\.(\d{2})\.(\d{4})/); return m ? +(m[3] + m[2] + m[1]) : 0; }
+    function isoToKey(v) { return v ? +v.replace(/-/g, '') : 0; }
+
+    async function load() {
+      try {
+        if (!PROJECT) throw new Error('Не указан проект в ссылке');
+
+        // 1. Данные проекта из Firestore (название, таблица, менеджеры)
+        const snap = await getDoc(doc(db, 'admin_projects', PROJECT));
+        if (!snap.exists()) throw new Error('Проект не найден');
+        const p = snap.data();
+        document.getElementById('proj-name').textContent  = p.name || PROJECT;
+        document.getElementById('proj-name2').textContent = p.name || PROJECT;
+        document.title = (p.name || PROJECT) + ' — Отчёт';
+
+        const managers = (p.managers || []).filter(Boolean);
+        const m = (p.sheets_url || '').match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+        if (!m) throw new Error('У проекта не указана Google Таблица');
+        _sid = m[1];
+        _mParam = encodeURIComponent(managers.join(','));
+
+        // 2. Строки таблицы (getAllClients по менеджерам) — грузим один раз
+        const results = await Promise.all(managers.map(async mgr => {
+          try {
+            const r = await fetch(BASE_WEBHOOK + '?action=getAllClients&manager=' + encodeURIComponent(mgr) + '&spreadsheetId=' + _sid);
+            const d = await r.json();
+            return (d.ok && Array.isArray(d.clients)) ? d.clients : [];
+          } catch (e) { return []; }
+        }));
+        _raw = results.flat();
+
+        await applyRange();   // считает сводку (сервер) + строит таблицу (клиент)
+
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('main').style.display    = 'block';
+        document.getElementById('upd-time').textContent  = 'обновлено ' + new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+      } catch (e) {
+        document.getElementById('loading').textContent = 'Ошибка: ' + e.message;
+      }
+    }
+    window.reloadReport = function () {
+      document.getElementById('main').style.display = 'none';
+      document.getElementById('loading').style.display = 'flex';
+      document.getElementById('loading').textContent = 'Обновляю данные...';
+      load();
+    };
+
+    // Сводка с сервера за текущий диапазон (getProjectStats)
+    async function fetchStats() {
+      let url = BASE_WEBHOOK + '?action=getProjectStats&spreadsheetId=' + _sid + '&managers=' + _mParam;
+      if (_range) url += '&from=' + _range.from + '&to=' + _range.to;
+      try {
+        const resp = await fetch(url);
+        const data = await resp.json();
+        return (data && data.ok && data.project) ? data.project : {};
+      } catch (e) { return {}; }
+    }
+    function computeRange() {
+      const f = isoToKey(document.getElementById('r-from')?.value);
+      const t = isoToKey(document.getElementById('r-to')?.value);
+      if (!f && !t) return null;
+      let from = f || t, to = t || f;
+      if (from > to) { const x = from; from = to; to = x; }
+      return { from, to };
+    }
+    // Применить диапазон: пересчитать сводку (сервер) и таблицу (из сырых строк)
+    window.applyRange = async function () {
+      _range = computeRange();
+      const btn = document.getElementById('dm-all');
+      if (btn) btn.classList.toggle('active', !_range);
+      const stats = await fetchStats();
+      renderStats(stats);
+      allRows = buildRows(_range);
+      renderTable();
+      updateCounts();
+    };
+    window.setAllRange = function () {
+      const f = document.getElementById('r-from'); if (f) f.value = '';
+      const t = document.getElementById('r-to');   if (t) t.value = '';
+      applyRange();
+    };
+
+    // Строит строки таблицы из сырых клиентов: компания = последний результат (в диапазоне, если задан)
+    function buildRows(range) {
+      const LPR = ['Отказ ЛПР','КП ЛПР','Перезвон ЛПР','Лид'];
+      const seen = {}, rows = [];
+      _raw.forEach(c => {
+        const org = (c.org_name || '').toString().trim();
+        if (!org) return;
+        const key = c.rowNum != null ? 'r' + c.rowNum : org + '|' + (c.phone1 || '');
+        if (seen[key]) return; seen[key] = true;
+        let result = '', note = '', date = '';
+        for (let i = 1; i <= 6; i++) {
+          const res = (c['result' + i] || '').toString().trim();
+          if (!res) continue;
+          if (range) { const k = dateKey(c['date' + i]); if (!k || k < range.from || k > range.to) continue; }
+          result = res; note = (c['note' + i] || '').toString().trim(); date = (c['date' + i] || '').toString().trim();
+        }
+        if (!result) return;                                // нет результата (в диапазоне) — не показываем
+        rows.push({
+          org_name: org, phone: (c.phone1 || '').toString().trim(), region: (c.region || '').toString().trim(),
+          lpr_name: (c.lpr_name || '').toString().trim(), result: result, note: note, date: date,
+          group: statusGroup(result), isLpr: LPR.indexOf(result) >= 0,
+        });
+      });
+      return rows;
+    }
+
+    function renderStats(s) {
+      const total = s.totalContacts || 0;
+      const done  = Math.max(0, total - (s.emptyContacts || 0));
+      const comp  = s.totalCompanies || 0;
+      const lead  = s.leadCompanies || 0;
+      const kplpr = s.kplprCompanies || 0;
+      const lprC  = s.lprCompanies || 0;
+      const att   = s.attemptedCompanies || 0;
+      const conv  = comp ? Math.round(lead / comp * 100) : 0;
+      const reach = att  ? Math.round(comp / att * 100) : 0;                       // дозвон
+      const lprP  = comp ? Math.round(lprC / comp * 100) : 0;                      // выход на ЛПР
+      const refP  = comp ? Math.round((s.refusedCompanies || 0) / comp * 100) : 0; // отказ ЛПР
+      const prog  = total ? Math.round(done / total * 100) : 0;
+
+      set('s-done', done + ' / ' + total); set('s-done-sub', prog + '% базы обработано');
+      set('s-dial', s.totalDialogs || 0);  set('s-dial-sub', 'дозвон ' + reach + '%');
+      set('s-lpr',  lprC);                 set('s-lpr-sub', lprP + '% от компаний');
+      set('s-lead', lead);                 set('s-lead-sub', conv + '% конверсия');
+      set('s-kp',   kplpr);                set('s-kp-sub', 'КП отправлено ЛПР');
+
+      set('f-reach', reach + '%');
+      set('f-lpr',   lprP + '%');
+      set('f-ref',   refP + '%');
+    }
+
+    function renderTable() {
+      const filter = window._filter || 'все';
+      const search = (window._search || '').toLowerCase();
+      let list = allRows;
+      if (filter !== 'все') list = list.filter(c => c.group === filter);
+      if (search) list = list.filter(c =>
+        (c.org_name || '').toLowerCase().includes(search) ||
+        (c.phone || '').includes(search) ||
+        (c.region || '').toLowerCase().includes(search)
+      );
+      const tbody = document.getElementById('tbody');
+      if (!list.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty-cell">Нет данных</td></tr>'; renderTotals([]); return; }
+      tbody.innerHTML = list.map(c => {
+        const cls = STATUS_COLORS[c.result] || 'st-gray';
+        return '<tr' + (c.isLpr ? ' class="row-lpr"' : '') + '>'
+          + '<td class="td-org">' + esc(c.org_name || '—') + '</td>'
+          + '<td class="td-sec">' + esc(c.phone || '—') + '</td>'
+          + '<td class="td-sec">' + esc(c.region || '—') + '</td>'
+          + '<td class="td-pri">' + esc(c.lpr_name || '—') + '</td>'
+          + '<td class="td-badge">' + (c.result ? '<span class="badge ' + cls + '">' + esc(c.result) + '</span>' : '<span class="td-muted">—</span>') + '</td>'
+          + '<td class="td-sec td-trunc">' + esc(c.note || '—') + '</td>'
+          + '<td class="td-sec">' + esc(c.date || '—') + '</td>'
+          + '</tr>';
+      }).join('');
+      renderTotals(list);
+    }
+
+    // Итоги по текущей выборке (с учётом фильтра/поиска/периода)
+    function renderTotals(list) {
+      const g = { лид:0, кп:0, перезвон:0, отказ:0, недозвон:0, прочее:0 };
+      list.forEach(c => { g[c.group] = (g[c.group] || 0) + 1; });
+      set('tot-shown', list.length);
+      set('tot-lid',   g.лид);   set('tot-kp',   g.кп);      set('tot-perz', g.перезвон);
+      set('tot-otkaz', g.отказ); set('tot-nedoz', g.недозвон); set('tot-other', g.прочее);
+    }
+
+    function updateCounts() {
+      const counts = { 'все': allRows.length };
+      ['лид','кп','перезвон','отказ','недозвон'].forEach(g => counts[g] = allRows.filter(c => c.group === g).length);
+      document.querySelectorAll('.fb').forEach(btn => {
+        const el = btn.querySelector('.fb-cnt');
+        if (el) el.textContent = counts[btn.dataset.val] || 0;
+      });
+    }
+
+    window.setFilter = function (btn, val) {
+      document.querySelectorAll('.fb').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      window._filter = val;
+      renderTable();
+    };
+    window.onSearch = function (v) { window._search = v; renderTable(); };
+
+    window.exportCSV = function () {
+      const headers = ['Организация','Телефон','Регион','Имя ЛПР','Результат','Примечание','Дата'];
+      const rows = [headers].concat(allRows.map(c => [c.org_name, c.phone, c.region, c.lpr_name, c.result, c.note, c.date]));
+      const csv = rows.map(r => r.map(v => {
+        const s = String(v == null ? '' : v);
+        return /[";\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+      }).join(';')).join('\r\n');
+      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+      const url  = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'отчёт_' + (PROJECT || 'проект') + '.csv';
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    };
+
+    function set(id, v) { const e = document.getElementById(id); if (e) e.textContent = v; }
+    function fmtPct(v) { if (v == null) return '—'; const r = Math.round(v * 10) / 10; return (Number.isInteger(r) ? String(r) : r.toFixed(1).replace('.', ',')) + '%'; }
+    function esc(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+    load();
+  </script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:#f5f6f8; --white:#fff; --border:#e5e7eb; --border2:#d1d5db;
+      --text:#111827; --sec:#6b7280; --muted:#9ca3af; --accent:#2563eb;
+      --rad:10px; --shadow:0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.04);
+    }
+    body { font-family:'Inter',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100vh; font-size:14px; }
+
+    .topbar { background:var(--white); border-bottom:1px solid var(--border); padding:12px 20px; display:flex; align-items:center; gap:12px; position:sticky; top:0; z-index:10; }
+    .t-logo { width:32px; height:32px; background:var(--accent); border-radius:8px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+    .t-logo svg { width:16px; height:16px; fill:#fff; }
+    .t-name { font-size:15px; font-weight:600; color:var(--text); }
+    .t-sub  { font-size:12px; color:var(--sec); margin-top:1px; }
+    .refresh { margin-left:auto; display:flex; align-items:center; gap:8px; font-size:12px; font-weight:500; color:var(--sec); background:var(--white); border:1px solid var(--border2); padding:5px 12px; border-radius:20px; cursor:pointer; font-family:inherit; transition:all .12s; }
+    .refresh:hover { border-color:var(--accent); color:var(--accent); }
+
+    .page { max-width:1040px; margin:0 auto; padding:20px 20px 60px; display:flex; flex-direction:column; gap:16px; }
+
+    .daterow { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .dinp { border:1px solid var(--border2); border-radius:6px; padding:5px 8px; font-size:13px; font-family:inherit; color:var(--text); outline:none; background:var(--white); cursor:pointer; }
+    .dinp:focus { border-color:var(--accent); }
+
+    .stats { display:grid; grid-template-columns:repeat(5,1fr); gap:12px; background:var(--white); border:1px solid var(--border); border-radius:var(--rad); padding:20px; box-shadow:var(--shadow); }
+    .stat-item { display:flex; flex-direction:column; gap:2px; }
+    .stat-item + .stat-item { border-left:1px solid var(--border); padding-left:20px; }
+    .stat-n { font-size:26px; font-weight:600; line-height:1; }
+    .stat-n.green { color:#16a34a; }
+    .stat-n.indigo { color:#4f46e5; }
+    .stat-l { font-size:12px; color:var(--sec); margin-top:4px; }
+    .stat-d { font-size:12px; margin-top:4px; }
+    .stat-d.up  { color:#16a34a; }
+    .stat-d.neu { color:var(--muted); }
+
+    .funnel { display:flex; gap:20px; flex-wrap:wrap; background:var(--white); border:1px solid var(--border); border-radius:var(--rad); padding:12px 18px; box-shadow:var(--shadow); font-size:13px; color:var(--sec); }
+    .fn-item b { color:var(--text); font-weight:600; margin-left:5px; font-size:14px; }
+    .fn-item b.fn-red { color:#dc2626; }
+
+    .legend { display:flex; gap:14px; flex-wrap:wrap; }
+    .leg { display:flex; align-items:center; gap:5px; font-size:13px; color:var(--sec); }
+    .leg-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+
+    .filter-bar { background:var(--white); border:1px solid var(--border); border-radius:var(--rad); padding:10px 14px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; box-shadow:var(--shadow); }
+    .filter-label { font-size:13px; color:var(--sec); margin-right:4px; }
+    .fb { display:flex; align-items:center; gap:5px; padding:5px 14px; border-radius:6px; border:1px solid var(--border2); background:var(--white); color:var(--sec); font-size:13px; font-weight:500; cursor:pointer; font-family:inherit; transition:all .12s; }
+    .fb:hover { border-color:#9ca3af; color:var(--text); }
+    .fb.active { background:var(--text); border-color:var(--text); color:#fff; }
+    .fb-cnt { font-size:11px; background:rgba(0,0,0,.08); padding:1px 6px; border-radius:10px; }
+    .fb.active .fb-cnt { background:rgba(255,255,255,.2); }
+    .search-box { margin-left:auto; display:flex; align-items:center; gap:7px; border:1px solid var(--border2); border-radius:6px; padding:5px 10px; background:var(--white); }
+    .search-box svg { width:14px; height:14px; color:var(--muted); flex-shrink:0; }
+    .search-box input { border:none; outline:none; font-size:13px; color:var(--text); width:180px; font-family:inherit; background:transparent; }
+    .search-box input::placeholder { color:var(--muted); }
+
+    .table-card { background:var(--white); border:1px solid var(--border); border-radius:var(--rad); overflow:hidden; box-shadow:var(--shadow); }
+    table { width:100%; border-collapse:collapse; font-size:13px; table-layout:fixed; }
+    col.c1{width:20%} col.c2{width:13%} col.c3{width:12%} col.c4{width:11%} col.c5{width:13%} col.c6{width:21%} col.c7{width:10%}
+    thead tr { border-bottom:1px solid var(--border); }
+    th { padding:10px 14px; text-align:left; font-size:11px; font-weight:500; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; background:#fafafa; }
+    td { padding:10px 14px; border-bottom:1px solid var(--border); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    td.td-badge { overflow:visible; text-overflow:clip; }
+    tr:last-child td { border-bottom:none; }
+    tr:hover td { background:#fafafa; }
+    .td-org { font-weight:600; color:var(--text); }
+    .td-pri { font-weight:500; color:var(--text); }
+    .td-sec { color:var(--sec); }
+    .td-muted { color:var(--muted); }
+    .td-trunc { max-width:180px; }
+    .empty-cell { text-align:center; padding:40px; color:var(--muted); }
+
+    .badge { display:inline-flex; align-items:center; font-size:12px; font-weight:500; padding:3px 9px; border-radius:20px; white-space:nowrap; }
+    .st-lid   { background:#dcfce7; color:#16a34a; }
+    .st-kp    { background:#e0e7ff; color:#4338ca; }
+    .st-perz  { background:#fef9c3; color:#ca8a04; }
+    .st-otkaz { background:#fce7f3; color:#be185d; }
+    .st-nedoz { background:#ffedd5; color:#c2410c; }
+    .st-gray  { background:#f3f4f6; color:#6b7280; }
+
+    tr.row-lpr td { background:#eef2ff; }
+    tr.row-lpr:hover td { background:#e0e7ff; }
+
+    .totals { display:flex; gap:6px; flex-wrap:wrap; align-items:center; padding:11px 14px; background:#fafafa; border-top:1px solid var(--border); font-size:12px; color:var(--sec); }
+    .totals b { color:var(--text); font-weight:600; }
+    .totals b.t-lid{color:#16a34a} .totals b.t-kp{color:#4338ca} .totals b.t-perz{color:#ca8a04} .totals b.t-otkaz{color:#be185d} .totals b.t-nedoz{color:#c2410c}
+
+    .tfoot { display:flex; align-items:center; gap:10px; padding:11px 14px; background:#fafafa; border-top:1px solid var(--border); }
+    .tfoot-note { font-size:12px; color:var(--muted); }
+    .btn-csv { margin-left:auto; display:flex; align-items:center; gap:6px; padding:6px 14px; border-radius:6px; border:1px solid var(--border2); background:var(--white); color:var(--sec); font-size:12px; font-weight:500; cursor:pointer; font-family:inherit; transition:all .12s; }
+    .btn-csv:hover { border-color:var(--accent); color:var(--accent); }
+
+    #loading { display:flex; align-items:center; justify-content:center; min-height:300px; font-size:14px; color:var(--muted); }
+    #main { display:none; }
+    @media(max-width:640px) { .stats{grid-template-columns:repeat(2,1fr)} .stat-item+.stat-item{border-left:none;padding-left:0;border-top:1px solid var(--border);padding-top:16px} }
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="t-logo">
+    <svg viewBox="0 0 20 20"><path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zm6-4a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zm6-3a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"/></svg>
+  </div>
+  <div>
+    <div class="t-name" id="proj-name">Загрузка...</div>
+    <div class="t-sub">Отчёт по проекту · только просмотр</div>
+  </div>
+  <button class="refresh" onclick="reloadReport()"><span id="upd-time"></span> &#8635; Обновить</button>
+</div>
+
+<div class="page">
+  <div id="loading">Загружаю данные...</div>
+  <div id="main">
+
+    <div class="daterow">
+      <span class="filter-label">Период:</span>
+      <button id="dm-all" class="fb active" onclick="setAllRange()">Всего</button>
+      <input type="date" id="r-from" class="dinp" onchange="applyRange()">
+      <span style="color:var(--muted)">—</span>
+      <input type="date" id="r-to" class="dinp" onchange="applyRange()">
+    </div>
+
+    <div class="stats">
+      <div class="stat-item">
+        <div class="stat-n" id="s-done">0</div>
+        <div class="stat-l">Обработано</div>
+        <div class="stat-d neu" id="s-done-sub"></div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-n" id="s-dial">0</div>
+        <div class="stat-l">Диалогов</div>
+        <div class="stat-d neu" id="s-dial-sub"></div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-n indigo" id="s-lpr">0</div>
+        <div class="stat-l">Вышли на ЛПР</div>
+        <div class="stat-d neu" id="s-lpr-sub"></div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-n green" id="s-lead">0</div>
+        <div class="stat-l">Лидов</div>
+        <div class="stat-d up" id="s-lead-sub"></div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-n" id="s-kp">0</div>
+        <div class="stat-l">КП ЛПР</div>
+        <div class="stat-d neu" id="s-kp-sub"></div>
+      </div>
+    </div>
+
+    <div class="funnel">
+      <span class="fn-item">Дозвон <b id="f-reach">0%</b></span>
+      <span class="fn-item">Выход на ЛПР <b id="f-lpr">0%</b></span>
+      <span class="fn-item">Отказов ЛПР <b class="fn-red" id="f-ref">0%</b></span>
+    </div>
+
+    <div class="filter-bar">
+      <span class="filter-label">Результат:</span>
+      <button class="fb active" data-val="все"      onclick="setFilter(this,'все')">Все <span class="fb-cnt">0</span></button>
+      <button class="fb"        data-val="лид"      onclick="setFilter(this,'лид')">Лид <span class="fb-cnt">0</span></button>
+      <button class="fb"        data-val="кп"       onclick="setFilter(this,'кп')">КП <span class="fb-cnt">0</span></button>
+      <button class="fb"        data-val="перезвон" onclick="setFilter(this,'перезвон')">Перезвон <span class="fb-cnt">0</span></button>
+      <button class="fb"        data-val="отказ"    onclick="setFilter(this,'отказ')">Отказ <span class="fb-cnt">0</span></button>
+      <button class="fb"        data-val="недозвон" onclick="setFilter(this,'недозвон')">Недозвон <span class="fb-cnt">0</span></button>
+      <div class="search-box">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8.5" cy="8.5" r="5.5"/><path d="M15 15l-3-3"/></svg>
+        <input type="text" placeholder="Поиск по организации..." oninput="onSearch(this.value)">
+      </div>
+    </div>
+
+    <div class="table-card">
+      <div style="overflow-x:auto">
+        <table>
+          <colgroup><col class="c1"><col class="c2"><col class="c3"><col class="c4"><col class="c5"><col class="c6"><col class="c7"></colgroup>
+          <thead><tr>
+            <th>Организация</th><th>Телефон</th><th>Регион</th>
+            <th>Имя ЛПР</th><th>Результат</th><th>Примечание</th><th>Дата</th>
+          </tr></thead>
+          <tbody id="tbody"><tr><td colspan="7" class="empty-cell">Загрузка...</td></tr></tbody>
+        </table>
+      </div>
+      <div class="totals">
+        Показано <b id="tot-shown">0</b>&nbsp;·&nbsp;
+        Лид <b class="t-lid" id="tot-lid">0</b>&nbsp;·&nbsp;
+        КП <b class="t-kp" id="tot-kp">0</b>&nbsp;·&nbsp;
+        Перезвон <b class="t-perz" id="tot-perz">0</b>&nbsp;·&nbsp;
+        Отказ <b class="t-otkaz" id="tot-otkaz">0</b>&nbsp;·&nbsp;
+        Недозвон <b class="t-nedoz" id="tot-nedoz">0</b>&nbsp;·&nbsp;
+        Прочее <b id="tot-other">0</b>
+      </div>
+      <div class="tfoot">
+        <span class="tfoot-note">&#128274; Только просмотр · данные по проекту <span id="proj-name2"></span></span>
+        <button class="btn-csv" onclick="exportCSV()">&#8595; Скачать CSV</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>
