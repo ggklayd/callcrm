@@ -80,10 +80,9 @@
       const now = new Date(), pad = n => String(n).padStart(2, '0');
       const iso = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
       const key = +iso.replace(/-/g, '');
-      const f = document.getElementById('stat-from'); if (f) f.value = iso;
-      const t = document.getElementById('stat-to');   if (t) t.value = iso;
+      ['stat-from', 'stat-to', 'mm-from', 'mm-to'].forEach(id => { const e = document.getElementById(id); if (e) e.value = iso; });
       window._statRange = { fromKey: key, toKey: key };
-      const b = document.getElementById('dm-today'); if (b) b.classList.add('active');
+      ['dm-today', 'mdm-today'].forEach(id => { const b = document.getElementById(id); if (b) b.classList.add('active'); });
     })();
 
     // Считает статистику из клиентов (формат getAllClients: result1..6, date1..6).
@@ -290,8 +289,11 @@
       const now = new Date(), pad = n => String(n).padStart(2, '0');
       const todayKey = +(now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate()));
       const isToday = !!window._statRange && window._statRange.fromKey === todayKey && window._statRange.toKey === todayKey;
-      const allBtn = document.getElementById('dm-all');   if (allBtn) allBtn.classList.toggle('active', !window._statRange);
-      const todBtn = document.getElementById('dm-today'); if (todBtn) todBtn.classList.toggle('active', isToday);
+      ['dm-all', 'mdm-all'].forEach(id => { const b = document.getElementById(id); if (b) b.classList.toggle('active', !window._statRange); });
+      ['dm-today', 'mdm-today'].forEach(id => { const b = document.getElementById(id); if (b) b.classList.toggle('active', isToday); });
+      const sf = document.getElementById('stat-from')?.value || '', st = document.getElementById('stat-to')?.value || '';
+      const mf = document.getElementById('mm-from'); if (mf) mf.value = sf;
+      const mt = document.getElementById('mm-to');   if (mt) mt.value = st;
       Object.values(window.projects || {}).forEach(p => loadProjectStats(p.id, p.sheets_url, p.managers));
     };
 
@@ -307,6 +309,14 @@
       const iso = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
       const f = document.getElementById('stat-from'); if (f) f.value = iso;
       const t = document.getElementById('stat-to');   if (t) t.value = iso;
+      window.applyDateFilter();
+    };
+    // Применить период из полей модалки (копирует в главные и применяет)
+    window.applyModalDate = function () {
+      const mf = document.getElementById('mm-from')?.value || '';
+      const mt = document.getElementById('mm-to')?.value || '';
+      const sf = document.getElementById('stat-from'); if (sf) sf.value = mf;
+      const st = document.getElementById('stat-to');   if (st) st.value = mt;
       window.applyDateFilter();
     };
 
@@ -501,7 +511,6 @@
               + '<div class="mgr-info">'
               +   '<div class="mgr-name">'+esc(m)+'</div>'
               +   '<div class="mgr-stats" id="mgrst-'+id+'-'+i+'"></div>'
-              +   '<div class="mgr-url">'+esc(link)+'</div>'
               + '</div>'
               + '<button class="mgr-copy" onclick="copyText(\''+link+'\')">Копировать</button>'
               + '<button class="mgr-del" onclick="removeManager(\''+id+'\',\''+esc(m)+'\')">&#10005;</button>'
@@ -810,6 +819,7 @@
     .stage-badge{font-size:11px;font-weight:600;color:#6d28d9;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:20px;padding:3px 10px;white-space:nowrap;flex-shrink:0}
     .stage-badge.stage-arch{color:#6b7280;background:#f3f4f6;border-color:#e5e7eb}
     .dp-stage-lbl{font-size:12px;color:var(--muted)}
+    .mdate-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0 14px}
     .dp-stage-sel{border:1px solid var(--border2);border-radius:6px;background:var(--white);color:var(--text);font-size:12px;font-family:inherit;padding:4px 8px;outline:none;cursor:pointer}
     .dp-stage-sel:focus{border-color:var(--accent)}
     .b-green{background:#dcfce7;color:#16a34a}
@@ -822,7 +832,7 @@
 
     .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:100;align-items:center;justify-content:center;padding:20px}
     .modal-bg.open{display:flex}
-    .modal{background:var(--white);border-radius:12px;padding:24px;width:100%;max-width:620px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 30px rgba(0,0,0,.15)}
+    .modal{background:var(--white);border-radius:12px;padding:24px;width:100%;max-width:900px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 30px rgba(0,0,0,.15)}
     .modal-title{font-size:17px;font-weight:600;margin-bottom:4px}
     .modal-sub{font-size:13px;color:var(--sec);margin-bottom:20px}
     .modal-close{float:right;background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;margin-top:-4px}
@@ -1028,6 +1038,15 @@
 
     <div class="detail-section">
       <div class="detail-label">Менеджеры проекта</div>
+      <div class="mdate-bar">
+        <span class="dp-stage-lbl">Статистика за:</span>
+        <button id="mdm-all" class="date-toggle" onclick="setAllTime()">Всего</button>
+        <button id="mdm-today" class="date-toggle" onclick="setToday()">Сегодня</button>
+        <div class="date-wrap"><input type="date" id="mm-from"></div>
+        <span class="date-lbl">—</span>
+        <div class="date-wrap"><input type="date" id="mm-to"></div>
+        <button class="date-toggle btn-apply" onclick="applyModalDate()">Применить</button>
+      </div>
       <div id="dp-mgrs"></div>
       <div class="add-row">
         <input type="text" id="new-mgr" placeholder="Имя менеджера" onkeydown="if(event.key==='Enter')addManager()">
