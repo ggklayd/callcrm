@@ -516,7 +516,8 @@
       window._dpId = id;
       document.getElementById('dp-name').textContent   = p.name;
       document.getElementById('dp-stage').value        = p.stage || (p.active === false ? 'В архиве' : '');
-      document.getElementById('dp-lr').textContent     = BASE + '/report.html?project=' + id;
+      document.getElementById('dp-lr').textContent     = BASE + '/reportclient.html?project=' + id;
+      document.getElementById('dp-la').textContent     = BASE + '/reportadmin.html?project=' + id;
       document.getElementById('dp-ls').textContent     = p.sheets_url || '—';
 
       const mgrs = p.managers || [];
@@ -1022,12 +1023,19 @@
     <div class="detail-section">
       <div class="detail-label">Ссылки проекта</div>
       <span id="dp-lr" style="display:none"></span>
+      <span id="dp-la" style="display:none"></span>
       <span id="dp-ls" style="display:none"></span>
       <div class="link-btns">
         <span class="link-icon">&#128065;</span>
         <span class="link-name">Отчёт заказчику</span>
         <button class="lbtn lbtn-open" onclick="openLink(document.getElementById('dp-lr').textContent)">Открыть</button>
         <button class="lbtn" onclick="copyText(document.getElementById('dp-lr').textContent)">Копировать</button>
+      </div>
+      <div class="link-btns">
+        <span class="link-icon">&#128273;</span>
+        <span class="link-name">Отчёт (админ)</span>
+        <button class="lbtn lbtn-open" onclick="openLink(document.getElementById('dp-la').textContent)">Открыть</button>
+        <button class="lbtn" onclick="copyText(document.getElementById('dp-la').textContent)">Копировать</button>
       </div>
       <div class="link-btns">
         <span class="link-icon">&#128202;</span>
