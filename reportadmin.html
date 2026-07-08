@@ -151,25 +151,24 @@
         const g = k => bs[k] || 0;
         const comp = s.totalCompanies || 0;
         const pctLead = comp ? Math.round((s.leadCompanies || 0) / comp * 100) : 0;
-        const total = s.totalContacts || 0, done = Math.max(0, total - (s.emptyContacts || 0));
         return '<tr>'
           + '<td class="mgr-cell"><span class="mgr-av" style="background:' + strColor(m) + '">' + ((m[0] || '?').toUpperCase()) + '</span><span class="mgr-name">' + esc(m) + '</span></td>'
-          + '<td>' + (s.totalDialogs || 0) + '</td>'
           + '<td>' + comp + '</td>'
-          + '<td class="c-green">' + (s.leadCompanies || 0) + '</td>'
-          + '<td class="c-indigo">' + (s.kplprCompanies || 0) + '</td>'
-          + '<td class="c-green">' + pctLead + '%</td>'
-          + '<td class="c-orange">' + g('Недозвон') + '</td>'
-          + '<td class="c-red">' + g('Отказ Сек') + '</td>'
-          + '<td class="c-pink">' + g('Отказ ЛПР') + '</td>'
-          + '<td class="c-blue">' + g('КП Сек') + '</td>'
-          + '<td class="c-yellow">' + g('Перезвон Сек') + '</td>'
-          + '<td class="c-amber">' + g('Перезвон ЛПР') + '</td>'
-          + '<td class="c-gray">' + g('Не абонент') + '</td>'
-          + '<td class="c-gray">' + g('Дубль') + '</td>'
-          + '<td class="c-gray">' + g('Не компания') + '</td>'
-          + '<td class="c-gray">' + g('Частное лицо') + '</td>'
-          + '<td>' + done + '/' + total + '</td>'
+          + '<td>' + (s.totalDialogs || 0) + '</td>'
+          + '<td>' + (s.leadCompanies || 0) + '</td>'
+          + '<td>' + (s.kplprCompanies || 0) + '</td>'
+          + '<td>' + pctLead + '%</td>'
+          + '<td>' + g('Отказ Сек') + '</td>'
+          + '<td>' + g('КП Сек') + '</td>'
+          + '<td>' + g('Перезвон Сек') + '</td>'
+          + '<td>' + g('Отказ ЛПР') + '</td>'
+          + '<td>' + g('Перезвон ЛПР') + '</td>'
+          + '<td>' + g('Недозвон') + '</td>'
+          + '<td>' + g('Не абонент') + '</td>'
+          + '<td>' + g('Дубль') + '</td>'
+          + '<td>' + g('Не компания') + '</td>'
+          + '<td>' + g('Частное лицо') + '</td>'
+          + '<td>' + (s.emptyContacts || 0) + '</td>'
           + '<td>' + lastActShort(s) + '</td>'
           + '</tr>';
       }).join('');
@@ -417,14 +416,12 @@
     .mgr-scroll { overflow-x:auto; }
     .mgr-table { width:100%; border-collapse:collapse; font-size:11px; }
     .mgr-table th { text-align:right; font-weight:500; color:var(--muted); padding:5px 7px; border-bottom:1px solid var(--border); vertical-align:bottom; line-height:1.25; }
-    .mgr-table th.mgr-th-name { text-align:left; }
+    .mgr-table th.mgr-th-name { text-align:left; width:160px; }
     .mgr-table td { text-align:right; padding:8px 7px; border-bottom:1px solid var(--border); white-space:nowrap; color:var(--text); font-weight:600; }
     .mgr-table tr:last-child td { border-bottom:none; }
-    .mgr-table td.mgr-cell { text-align:left; }
+    .mgr-table td.mgr-cell { text-align:left; overflow:visible; text-overflow:clip; }
     .mgr-av { display:inline-flex; width:26px; height:26px; border-radius:50%; align-items:center; justify-content:center; font-size:11px; font-weight:600; color:#fff; vertical-align:middle; margin-right:8px; }
     .mgr-name { vertical-align:middle; font-weight:600; color:var(--text); }
-    .c-green{color:#16a34a} .c-indigo{color:#4338ca} .c-red{color:#dc2626} .c-orange{color:#c2410c}
-    .c-pink{color:#be185d} .c-blue{color:#1d4ed8} .c-yellow{color:#ca8a04} .c-amber{color:#a16207} .c-gray{color:#6b7280}
     .mgr-empty { font-size:13px; color:var(--muted); padding:8px 0; text-align:left; }
     .table-card { background:var(--white); border:1px solid var(--border); border-radius:var(--rad); overflow:hidden; box-shadow:var(--shadow); }
     table { width:100%; border-collapse:collapse; font-size:13px; table-layout:fixed; }
@@ -537,11 +534,11 @@
         <table class="mgr-table">
           <thead><tr>
             <th class="mgr-th-name">Менеджер</th>
-            <th>Диалогов</th><th>Компаний</th><th>Лидов</th><th>КП ЛПР</th><th>Конв.</th>
-            <th>Недозвон</th><th>Отказ Сек</th><th>Отказ ЛПР</th><th>КП Сек</th>
-            <th>Перезвон Сек</th><th>Перезвон ЛПР</th>
+            <th>Компаний</th><th>Диалогов</th><th>Лидов</th><th>КП ЛПР</th><th>Конв.</th>
+            <th>Отказ Сек</th><th>КП Сек</th><th>Перезвон Сек</th><th>Отказ ЛПР</th><th>Перезвон ЛПР</th>
+            <th>Недозвон</th>
             <th>Не абонент</th><th>Дубль</th><th>Не компания</th><th>Частное лицо</th>
-            <th>Обработано</th><th>Активность</th>
+            <th>Пустых контактов</th><th>Активность</th>
           </tr></thead>
           <tbody id="mgr-list"></tbody>
         </table>
