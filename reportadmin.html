@@ -269,8 +269,8 @@
       const prog  = total ? Math.round(done / total * 100) : 0;
 
       set('s-done', done + ' / ' + total); set('s-done-sub', prog + '% базы обработано');
+      set('s-comp', comp);                 set('s-comp-sub', 'выход на ЛПР ' + lprP + '%');
       set('s-dial', s.totalDialogs || 0);  set('s-dial-sub', 'дозвон ' + reach + '%');
-      set('s-lpr',  lprC);                 set('s-lpr-sub', lprP + '% от компаний');
       set('s-lead', lead);                 set('s-lead-sub', conv + '% конверсия');
       set('s-kp',   kplpr);                set('s-kp-sub', 'КП отправлено ЛПР');
 
@@ -530,14 +530,14 @@
         <div class="stat-d neu" id="s-done-sub"></div>
       </div>
       <div class="stat-item">
+        <div class="stat-n" id="s-comp">0</div>
+        <div class="stat-l">Компаний</div>
+        <div class="stat-d neu" id="s-comp-sub"></div>
+      </div>
+      <div class="stat-item">
         <div class="stat-n" id="s-dial">0</div>
         <div class="stat-l">Диалогов</div>
         <div class="stat-d neu" id="s-dial-sub"></div>
-      </div>
-      <div class="stat-item">
-        <div class="stat-n indigo" id="s-lpr">0</div>
-        <div class="stat-l">Вышли на ЛПР</div>
-        <div class="stat-d neu" id="s-lpr-sub"></div>
       </div>
       <div class="stat-item">
         <div class="stat-n green" id="s-lead">0</div>
