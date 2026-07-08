@@ -29,6 +29,11 @@
     const PROJECT = params.get('project') || '';
 
     let allRows = [], _raw = [], _range = null, _sid = '', _mParam = '';
+    let _stats = { project: {}, managers: {} };   // весь ответ getProjectStats
+    let _resp = '';                                // выбранный ответственный ('' = все)
+    let _sort = { col: '', dir: 1 };               // сортировка таблицы
+    const RESULT_ORDER = ['Лид','КП ЛПР','КП Сек','Перезвон ЛПР','Перезвон Сек','Отказ ЛПР','Отказ Сек','Недозвон','Не абонент','Дубль','Не компания','Частное лицо'];
+    function resultRank(r) { const i = RESULT_ORDER.indexOf(r); return i < 0 ? 999 : i; }
 
     // Цвета статусов обзвона (как в таблице/админке)
     const STATUS_COLORS = {
@@ -65,6 +70,8 @@
         document.title = (p.name || PROJECT) + ' — Отчёт';
 
         const managers = (p.managers || []).filter(Boolean);
+        const rsel = document.getElementById('resp-filter');
+        if (rsel) rsel.innerHTML = '<option value="">Все</option>' + managers.map(x => '<option value="' + esc(x) + '">' + esc(x) + '</option>').join('');
         const m = (p.sheets_url || '').match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
         if (!m) throw new Error('У проекта не указана Google Таблица');
         _sid = m[1];
@@ -103,8 +110,13 @@
       try {
         const resp = await fetch(url);
         const data = await resp.json();
-        return (data && data.ok && data.project) ? data.project : {};
-      } catch (e) { return {}; }
+        return (data && data.ok) ? { project: data.project || {}, managers: data.managers || {} } : { project: {}, managers: {} };
+      } catch (e) { return { project: {}, managers: {} }; }
+    }
+    // Сводка: по выбранному ответственному (per-manager) либо по всему проекту
+    function renderStatsForResp() {
+      const src = (_resp && _stats.managers && _stats.managers[_resp]) ? _stats.managers[_resp] : _stats.project;
+      renderStats(src || {});
     }
     function computeRange() {
       const f = isoToKey(document.getElementById('r-from')?.value);
@@ -119,8 +131,8 @@
       _range = computeRange();
       const btn = document.getElementById('dm-all');
       if (btn) btn.classList.toggle('active', !_range);
-      const stats = await fetchStats();
-      renderStats(stats);
+      _stats = await fetchStats();
+      renderStatsForResp();
       allRows = buildRows(_range);
       renderTable();
       updateCounts();
@@ -151,6 +163,7 @@
         rows.push({
           org_name: org, phone: (c.phone1 || '').toString().trim(), region: (c.region || '').toString().trim(),
           lpr_name: (c.lpr_name || '').toString().trim(), result: result, note: note, date: date,
+          assigned: (c.assigned || '').toString().trim(),
           group: statusGroup(result), isLpr: LPR.indexOf(result) >= 0,
         });
       });
@@ -186,12 +199,22 @@
       const filter = window._filter || 'все';
       const search = (window._search || '').toLowerCase();
       let list = allRows;
+      if (_resp) list = list.filter(c => (c.assigned || '').toLowerCase() === _resp.toLowerCase());
       if (filter !== 'все') list = list.filter(c => c.group === filter);
       if (search) list = list.filter(c =>
         (c.org_name || '').toLowerCase().includes(search) ||
         (c.phone || '').includes(search) ||
         (c.region || '').toLowerCase().includes(search)
       );
+      if (_sort.col) {
+        const dir = _sort.dir;
+        list = list.slice().sort((a, b) => {
+          if (_sort.col === 'date')   return (dateKey(a.date) - dateKey(b.date)) * dir;
+          if (_sort.col === 'region') return (a.region || '').localeCompare(b.region || '', 'ru') * dir;
+          if (_sort.col === 'result') return (resultRank(a.result) - resultRank(b.result)) * dir;
+          return 0;
+        });
+      }
       const tbody = document.getElementById('tbody');
       if (!list.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty-cell">Нет данных</td></tr>'; renderTotals([]); return; }
       tbody.innerHTML = list.map(c => {
@@ -219,8 +242,9 @@
     }
 
     function updateCounts() {
-      const counts = { 'все': allRows.length };
-      ['лид','кп','перезвон','отказ','недозвон'].forEach(g => counts[g] = allRows.filter(c => c.group === g).length);
+      const base = _resp ? allRows.filter(c => (c.assigned || '').toLowerCase() === _resp.toLowerCase()) : allRows;
+      const counts = { 'все': base.length };
+      ['лид','кп','перезвон','отказ','недозвон'].forEach(g => counts[g] = base.filter(c => c.group === g).length);
       document.querySelectorAll('.fb').forEach(btn => {
         const el = btn.querySelector('.fb-cnt');
         if (el) el.textContent = counts[btn.dataset.val] || 0;
@@ -228,12 +252,25 @@
     }
 
     window.setFilter = function (btn, val) {
-      document.querySelectorAll('.fb').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.fb-group .fb').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       window._filter = val;
       renderTable();
     };
     window.onSearch = function (v) { window._search = v; renderTable(); };
+    window.setResp = function (v) { _resp = v; renderStatsForResp(); renderTable(); updateCounts(); };
+    window.setSort = function (col) {
+      if (_sort.col === col) _sort.dir *= -1;
+      else { _sort.col = col; _sort.dir = 1; }
+      updateSortIndicators();
+      renderTable();
+    };
+    function updateSortIndicators() {
+      ['region','result','date'].forEach(c => {
+        const el = document.getElementById('si-' + c);
+        if (el) el.textContent = (_sort.col === c) ? (_sort.dir > 0 ? '▲' : '▼') : '';
+      });
+    }
 
     window.exportCSV = function () {
       const headers = ['Организация','Телефон','Регион','Имя ЛПР','Результат','Примечание','Дата'];
@@ -316,6 +353,9 @@
     col.c1{width:20%} col.c2{width:13%} col.c3{width:12%} col.c4{width:11%} col.c5{width:13%} col.c6{width:21%} col.c7{width:10%}
     thead tr { border-bottom:1px solid var(--border); }
     th { padding:10px 14px; text-align:left; font-size:11px; font-weight:500; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; background:#fafafa; }
+    th.th-sort { cursor:pointer; user-select:none; }
+    th.th-sort:hover { color:var(--sec); }
+    .sort-ind { font-size:9px; color:var(--accent); margin-left:1px; }
     td { padding:10px 14px; border-bottom:1px solid var(--border); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     td.td-badge { overflow:visible; text-overflow:clip; }
     tr:last-child td { border-bottom:none; }
@@ -375,6 +415,8 @@
       <input type="date" id="r-from" class="dinp" onchange="applyRange()">
       <span style="color:var(--muted)">—</span>
       <input type="date" id="r-to" class="dinp" onchange="applyRange()">
+      <span class="filter-label" style="margin-left:14px">Ответственный:</span>
+      <select id="resp-filter" class="dinp" onchange="setResp(this.value)"><option value="">Все</option></select>
     </div>
 
     <div class="stats">
@@ -432,8 +474,12 @@
         <table>
           <colgroup><col class="c1"><col class="c2"><col class="c3"><col class="c4"><col class="c5"><col class="c6"><col class="c7"></colgroup>
           <thead><tr>
-            <th>Организация</th><th>Телефон</th><th>Регион</th>
-            <th>Имя ЛПР</th><th>Результат</th><th>Примечание</th><th>Дата</th>
+            <th>Организация</th><th>Телефон</th>
+            <th class="th-sort" onclick="setSort('region')">Регион <span class="sort-ind" id="si-region"></span></th>
+            <th>Имя ЛПР</th>
+            <th class="th-sort" onclick="setSort('result')">Результат <span class="sort-ind" id="si-result"></span></th>
+            <th>Примечание</th>
+            <th class="th-sort" onclick="setSort('date')">Дата <span class="sort-ind" id="si-date"></span></th>
           </tr></thead>
           <tbody id="tbody"><tr><td colspan="7" class="empty-cell">Загрузка...</td></tr></tbody>
         </table>
