@@ -144,34 +144,34 @@
     function renderManagers() {
       const box = document.getElementById('mgr-list');
       if (!box) return;
-      if (!_managers.length) { box.innerHTML = '<div class="mgr-empty">Нет менеджеров</div>'; return; }
+      if (!_managers.length) { box.innerHTML = '<tr><td class="mgr-empty" colspan="18">Нет менеджеров</td></tr>'; return; }
       box.innerHTML = _managers.map(m => {
         const s = (_stats.managers && _stats.managers[m]) || {};
+        const bs = s.byStatus || {};
+        const g = k => bs[k] || 0;
         const comp = s.totalCompanies || 0;
         const pctLead = comp ? Math.round((s.leadCompanies || 0) / comp * 100) : 0;
         const total = s.totalContacts || 0, done = Math.max(0, total - (s.emptyContacts || 0));
-        const bs = s.byStatus || {};
-        const st = (label, key, cls) => '<span class="mst-item">' + label + ' <b' + (cls ? ' class="' + cls + '"' : '') + '>' + (bs[key] || 0) + '</b></span>';
-        const stMain = st('Недозвон', 'Недозвон', 'mst-orange')
-          + st('Отказ Сек', 'Отказ Сек', 'mst-red')
-          + st('Отказ ЛПР', 'Отказ ЛПР', 'mst-pink')
-          + st('КП Сек', 'КП Сек', 'mst-blue')
-          + st('Перезвон Сек', 'Перезвон Сек', 'mst-yellow')
-          + st('Перезвон ЛПР', 'Перезвон ЛПР', 'mst-amber');
-        const stJunk = [['Не абонент', 'Не абонент'], ['Дубль', 'Дубль'], ['Не компания', 'Не компания'], ['Частное лицо', 'Частное лицо']]
-          .filter(([, k]) => bs[k]).map(([lbl, k]) => st(lbl, k, 'mst-gray')).join('');
-        const stats = '<span class="mst-item">Диалогов <b>' + (s.totalDialogs || 0) + '</b></span>'
-          + '<span class="mst-item">Компаний <b>' + comp + '</b></span>'
-          + '<span class="mst-item">Лидов <b class="mst-green">' + (s.leadCompanies || 0) + '</b></span>'
-          + '<span class="mst-item">КП ЛПР <b class="mst-indigo">' + (s.kplprCompanies || 0) + '</b></span>'
-          + '<span class="mst-item">Конв. <b class="mst-green">' + pctLead + '%</b></span>'
-          + stMain + stJunk
-          + '<span class="mst-item">Обработано <b>' + done + '/' + total + '</b></span>'
-          + '<span class="mst-item">Активность <b>' + lastActShort(s) + '</b></span>';
-        return '<div class="mgr-row">'
-          + '<div class="mgr-av" style="background:' + strColor(m) + '">' + ((m[0] || '?').toUpperCase()) + '</div>'
-          + '<div class="mgr-info"><div class="mgr-name">' + esc(m) + '</div><div class="mgr-stats">' + stats + '</div></div>'
-          + '</div>';
+        return '<tr>'
+          + '<td class="mgr-cell"><span class="mgr-av" style="background:' + strColor(m) + '">' + ((m[0] || '?').toUpperCase()) + '</span><span class="mgr-name">' + esc(m) + '</span></td>'
+          + '<td>' + (s.totalDialogs || 0) + '</td>'
+          + '<td>' + comp + '</td>'
+          + '<td class="c-green">' + (s.leadCompanies || 0) + '</td>'
+          + '<td class="c-indigo">' + (s.kplprCompanies || 0) + '</td>'
+          + '<td class="c-green">' + pctLead + '%</td>'
+          + '<td class="c-orange">' + g('Недозвон') + '</td>'
+          + '<td class="c-red">' + g('Отказ Сек') + '</td>'
+          + '<td class="c-pink">' + g('Отказ ЛПР') + '</td>'
+          + '<td class="c-blue">' + g('КП Сек') + '</td>'
+          + '<td class="c-yellow">' + g('Перезвон Сек') + '</td>'
+          + '<td class="c-amber">' + g('Перезвон ЛПР') + '</td>'
+          + '<td class="c-gray">' + g('Не абонент') + '</td>'
+          + '<td class="c-gray">' + g('Дубль') + '</td>'
+          + '<td class="c-gray">' + g('Не компания') + '</td>'
+          + '<td class="c-gray">' + g('Частное лицо') + '</td>'
+          + '<td>' + done + '/' + total + '</td>'
+          + '<td>' + lastActShort(s) + '</td>'
+          + '</tr>';
       }).join('');
     }
     function computeRange() {
@@ -413,25 +413,19 @@
     .search-box input::placeholder { color:var(--muted); }
 
     .mgr-card { background:var(--white); border:1px solid var(--border); border-radius:var(--rad); padding:14px 18px; box-shadow:var(--shadow); }
-    .mgr-title { font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:4px; }
-    .mgr-row { display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--border); }
-    .mgr-row:last-child { border-bottom:none; }
-    .mgr-av { width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:600; color:#fff; flex-shrink:0; }
-    .mgr-info { min-width:0; }
-    .mgr-name { font-size:13px; font-weight:600; color:var(--text); }
-    .mgr-stats { display:flex; flex-wrap:wrap; gap:10px; margin:3px 0; }
-    .mst-item { font-size:11px; color:var(--muted); white-space:nowrap; }
-    .mst-item b { color:var(--text); font-weight:600; }
-    .mst-item b.mst-green { color:#16a34a; }
-    .mst-item b.mst-indigo { color:#4338ca; }
-    .mst-item b.mst-red { color:#dc2626; }
-    .mst-item b.mst-orange { color:#c2410c; }
-    .mst-item b.mst-pink { color:#be185d; }
-    .mst-item b.mst-blue { color:#1d4ed8; }
-    .mst-item b.mst-yellow { color:#ca8a04; }
-    .mst-item b.mst-amber { color:#a16207; }
-    .mst-item b.mst-gray { color:#6b7280; }
-    .mgr-empty { font-size:13px; color:var(--muted); padding:8px 0; }
+    .mgr-title { font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:8px; }
+    .mgr-scroll { overflow-x:auto; }
+    .mgr-table { width:100%; border-collapse:collapse; font-size:11px; }
+    .mgr-table th { text-align:right; font-weight:500; color:var(--muted); padding:5px 7px; border-bottom:1px solid var(--border); vertical-align:bottom; line-height:1.25; }
+    .mgr-table th.mgr-th-name { text-align:left; }
+    .mgr-table td { text-align:right; padding:8px 7px; border-bottom:1px solid var(--border); white-space:nowrap; color:var(--text); font-weight:600; }
+    .mgr-table tr:last-child td { border-bottom:none; }
+    .mgr-table td.mgr-cell { text-align:left; }
+    .mgr-av { display:inline-flex; width:26px; height:26px; border-radius:50%; align-items:center; justify-content:center; font-size:11px; font-weight:600; color:#fff; vertical-align:middle; margin-right:8px; }
+    .mgr-name { vertical-align:middle; font-weight:600; color:var(--text); }
+    .c-green{color:#16a34a} .c-indigo{color:#4338ca} .c-red{color:#dc2626} .c-orange{color:#c2410c}
+    .c-pink{color:#be185d} .c-blue{color:#1d4ed8} .c-yellow{color:#ca8a04} .c-amber{color:#a16207} .c-gray{color:#6b7280}
+    .mgr-empty { font-size:13px; color:var(--muted); padding:8px 0; text-align:left; }
     .table-card { background:var(--white); border:1px solid var(--border); border-radius:var(--rad); overflow:hidden; box-shadow:var(--shadow); }
     table { width:100%; border-collapse:collapse; font-size:13px; table-layout:fixed; }
     col.c1{width:14%} col.c2{width:12%} col.c3{width:10%} col.c4{width:10%} col.c5{width:13%} col.c6{width:9%} col.c7{width:23%} col.c8{width:9%}
@@ -539,7 +533,19 @@
 
     <div class="mgr-card">
       <div class="mgr-title">Статистика по менеджерам</div>
-      <div id="mgr-list"></div>
+      <div class="mgr-scroll">
+        <table class="mgr-table">
+          <thead><tr>
+            <th class="mgr-th-name">Менеджер</th>
+            <th>Диалогов</th><th>Компаний</th><th>Лидов</th><th>КП ЛПР</th><th>Конв.</th>
+            <th>Недозвон</th><th>Отказ Сек</th><th>Отказ ЛПР</th><th>КП Сек</th>
+            <th>Перезвон Сек</th><th>Перезвон ЛПР</th>
+            <th>Не абонент</th><th>Дубль</th><th>Не компания</th><th>Частное лицо</th>
+            <th>Обработано</th><th>Активность</th>
+          </tr></thead>
+          <tbody id="mgr-list"></tbody>
+        </table>
+      </div>
     </div>
 
     <div class="filter-bar">
