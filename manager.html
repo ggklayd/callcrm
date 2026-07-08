@@ -323,6 +323,7 @@
       window._currentIdx      = idx;
       window._editingAttempt  = null;
       startTimer();
+      updateLocalTime();
       const updateBar = document.getElementById('update-info-bar');
       if (updateBar) updateBar.remove();
       setF('f-org',       c.org_name);
@@ -526,6 +527,83 @@
       el.textContent = '⏱ ' + m + ':' + String(s).padStart(2, '0');
       el.className = 't-timer' + (secs >= 300 ? ' long' : secs >= 120 ? ' warn' : '');
     }
+
+    // ── Живое местное время клиента (по региону/городу) ────────────
+    // Считается на клиенте: getAllClients уже отдаёт region и city.
+    // Таблицы — те же, что в Apps Script (fillTimezones). РФ без летнего времени.
+    const CALL_START = 9, CALL_END = 21;   // рабочее окно (местного времени)
+    const REGION_TZ = {
+      'калининград': -1,
+      'самар': 1, 'удмурт': 1, 'астрахан': 1, 'ульянов': 1, 'саратов': 1,
+      'ямал': 2, 'ханты': 2, 'югра': 2, 'коми-перм': 2, 'свердлов': 2,
+      'челябин': 2, 'курган': 2, 'тюмен': 2, 'перм': 2, 'башкорт': 2,
+      'башкир': 2, 'оренбург': 2,
+      'омск': 3,
+      'новосибир': 4, 'томск': 4, 'кемеров': 4, 'кузбас': 4, 'красноярск': 4,
+      'алтай': 4, 'хакас': 4, 'тыва': 4, 'тува': 4,
+      'иркутск': 5, 'бурят': 5,
+      'амур': 6, 'забайкал': 6, 'якут': 6, 'саха (': 6,
+      'примор': 7, 'хабаров': 7, 'еврейск': 7,
+      'магадан': 8, 'сахалин': 8,
+      'камчат': 9, 'чукот': 9,
+      'моск': 0, 'санкт-петербург': 0, 'петербург': 0, 'ленинград': 0,
+      'адыг': 0, 'краснодар': 0, 'архангельск': 0, 'ненецк': 0, 'белгород': 0,
+      'брянск': 0, 'владимир': 0, 'волгоград': 0, 'вологод': 0, 'воронеж': 0,
+      'иванов': 0, 'калуж': 0, 'кировск': 0, 'киров': 0, 'костром': 0,
+      'курск': 0, 'липецк': 0, 'мурманск': 0, 'нижегород': 0, 'новгород': 0,
+      'орлов': 0, 'орёл': 0, 'орел': 0, 'пенз': 0, 'псков': 0, 'ростов': 0,
+      'рязан': 0, 'смоленск': 0, 'тамбов': 0, 'твер': 0, 'тульск': 0,
+      'ярослав': 0, 'карел': 0, 'коми': 0, 'марий': 0, 'мордов': 0, 'чуваш': 0,
+      'калмык': 0, 'дагестан': 0, 'ингушет': 0, 'кабардино': 0, 'карачаево': 0,
+      'осетия': 0, 'чечен': 0, 'чечн': 0, 'татарстан': 0, 'крым': 0,
+      'севастопол': 0, 'ставропол': 0
+    };
+    const CITY_TZ = {
+      'москва': 0, 'санкт-петербург': 0, 'петербург': 0, 'новосибирск': 4,
+      'екатеринбург': 2, 'казань': 0, 'нижний новгород': 0, 'челябинск': 2,
+      'самара': 1, 'омск': 3, 'ростов-на-дону': 0, 'уфа': 2, 'красноярск': 4,
+      'воронеж': 0, 'пермь': 2, 'волгоград': 0, 'краснодар': 0, 'саратов': 1,
+      'тюмень': 2, 'тольятти': 1, 'ижевск': 1, 'барнаул': 4, 'ульяновск': 1,
+      'иркутск': 5, 'хабаровск': 7, 'владивосток': 7, 'ярославль': 0,
+      'махачкала': 0, 'томск': 4, 'оренбург': 2, 'кемерово': 4, 'новокузнецк': 4,
+      'астрахань': 1, 'сургут': 2, 'нижневартовск': 2, 'улан-удэ': 5,
+      'магадан': 8, 'чита': 6, 'петропавловск-камчатский': 9,
+      'южно-сахалинск': 8, 'ханты-мансийск': 2, 'абакан': 4, 'кызыл': 4,
+      'горно-алтайск': 4,
+      'хандыга': 7, 'усть-нера': 7, 'оймякон': 7, 'верхоянск': 7, 'батагай': 7,
+      'среднеколымск': 8, 'черский': 8, 'зырянка': 8,
+      'северо-курильск': 9
+    };
+    function normGeo(s) {
+      s = (s == null) ? '' : String(s).toLowerCase().replace(/ё/g, 'е').trim();
+      s = s.replace(/^(город|гор|пгт|рп|село|деревня|посёлок|поселок|посад|станица|ст|г|с|д|п)\.?\s+/, '');
+      s = s.replace(/["'«»]/g, '').replace(/\s+/g, ' ').trim();
+      return s;
+    }
+    function resolveMskOffset(region, city) {
+      const c = normGeo(city);
+      if (c && CITY_TZ[c] !== undefined) return CITY_TZ[c];
+      const r = normGeo(region);
+      if (r) { for (const key in REGION_TZ) { if (r.indexOf(key) >= 0) return REGION_TZ[key]; } }
+      return null;
+    }
+    function updateLocalTime() {
+      const el = document.getElementById('m-localtime');
+      if (!el) return;
+      const c = window._allClients && window._allClients[window._currentIdx];
+      const msk = c ? resolveMskOffset(c.region, c.city) : null;
+      if (msk === null || msk === undefined) { el.style.display = 'none'; return; }
+      const d  = new Date(Date.now() + (3 + msk) * 3600 * 1000);   // сдвиг + чтение UTC-компонент = местное время
+      const hh = d.getUTCHours();
+      const mm = String(d.getUTCMinutes()).padStart(2, '0');
+      const zone = msk === 0 ? 'МСК' : (msk > 0 ? 'МСК+' + msk : 'МСК−' + Math.abs(msk));
+      const callable = hh >= CALL_START && hh < CALL_END;
+      el.textContent = '🕐 у клиента ' + hh + ':' + mm + ' · ' + zone;
+      el.className = 't-localtime ' + (callable ? 'tz-ok' : 'tz-bad');
+      el.title = callable ? 'Местное время у клиента — рабочие часы' : 'У клиента нерабочее время — звонить нежелательно';
+      el.style.display = '';
+    }
+    setInterval(updateLocalTime, 30000);   // держим время живым
 
     window.cancelEditAttempt = function() {
       window._editingAttempt = null;
@@ -776,6 +854,9 @@ body{display:flex;flex-direction:column;height:100vh;overflow:hidden;background:
 .t-av{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#dbeafe,#bfdbfe);color:#1d4ed8;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;border:2px solid #fff;box-shadow:0 0 0 2px #dbeafe;flex-shrink:0}
 .t-name{font-size:13px;font-weight:500;color:#334155}
 .t-badge{font-size:11px;font-weight:600;background:#eff6ff;color:#2563eb;border:1.5px solid #bfdbfe;padding:3px 10px;border-radius:20px}
+.t-localtime{font-size:11px;font-weight:600;background:#f1f5f9;color:#475569;border:1.5px solid #e2e8f0;padding:3px 10px;border-radius:20px;white-space:nowrap}
+.t-localtime.tz-ok{background:#f0fdf4;color:#16a34a;border-color:#bbf7d0}
+.t-localtime.tz-bad{background:#fef2f2;color:#dc2626;border-color:#fecaca}
 
 /* BODY */
 .body{display:flex;flex:1;min-height:0;overflow:hidden}
@@ -961,6 +1042,7 @@ input[readonly],textarea[readonly]{background:#f8fafc;color:#64748b;border-color
     <span class="t-name" id="m-name">Менеджер</span>
     <span class="t-badge" id="m-count">0 сегодня</span>
     <span class="t-timer" id="m-timer" title="Время на текущей карточке">⏱ 0:00</span>
+    <span class="t-localtime" id="m-localtime" title="Местное время у клиента" style="display:none"></span>
   </div>
 </div>
 
