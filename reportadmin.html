@@ -161,8 +161,12 @@
         }
         if (!result) return;                                // нет результата (в диапазоне) — не показываем
         rows.push({
-          org_name: org, phone: (c.phone1 || '').toString().trim(), region: (c.region || '').toString().trim(),
-          lpr_name: (c.lpr_name || '').toString().trim(), result: result, note: note, date: date,
+          org_name: org, phone: (c.phone1 || '').toString().trim(),
+          region: (c.region || '').toString().trim(), city: (c.city || '').toString().trim(),
+          lpr_name: (c.lpr_name || '').toString().trim(),
+          lpr_phone: (c.lpr_phone || '').toString().trim(),
+          lpr_email: (c.lpr_email || '').toString().trim(),
+          result: result, note: note, date: date,
           assigned: (c.assigned || '').toString().trim(),
           group: statusGroup(result), isLpr: LPR.indexOf(result) >= 0,
         });
@@ -204,26 +208,27 @@
       if (search) list = list.filter(c =>
         (c.org_name || '').toLowerCase().includes(search) ||
         (c.phone || '').includes(search) ||
-        (c.region || '').toLowerCase().includes(search)
+        (c.city || '').toLowerCase().includes(search)
       );
       if (_sort.col) {
         const dir = _sort.dir;
         list = list.slice().sort((a, b) => {
           if (_sort.col === 'date')   return (dateKey(a.date) - dateKey(b.date)) * dir;
-          if (_sort.col === 'region') return (a.region || '').localeCompare(b.region || '', 'ru') * dir;
+          if (_sort.col === 'city')   return (a.city || '').localeCompare(b.city || '', 'ru') * dir;
           if (_sort.col === 'result') return (resultRank(a.result) - resultRank(b.result)) * dir;
           return 0;
         });
       }
       const tbody = document.getElementById('tbody');
-      if (!list.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty-cell">Нет данных</td></tr>'; renderTotals([]); return; }
+      if (!list.length) { tbody.innerHTML = '<tr><td colspan="8" class="empty-cell">Нет данных</td></tr>'; renderTotals([]); return; }
       tbody.innerHTML = list.map(c => {
         const cls = STATUS_COLORS[c.result] || 'st-gray';
         return '<tr' + (c.isLpr ? ' class="row-lpr"' : '') + '>'
           + '<td class="td-org">' + esc(c.org_name || '—') + '</td>'
-          + '<td class="td-sec">' + esc(c.phone || '—') + '</td>'
-          + '<td class="td-sec">' + esc(c.region || '—') + '</td>'
+          + '<td class="td-sec">' + esc(c.city || '—') + '</td>'
           + '<td class="td-pri">' + esc(c.lpr_name || '—') + '</td>'
+          + '<td class="td-sec">' + esc(c.lpr_phone || '—') + '</td>'
+          + '<td class="td-sec">' + esc(c.lpr_email || '—') + '</td>'
           + '<td class="td-badge">' + (c.result ? '<span class="badge ' + cls + '">' + esc(c.result) + '</span>' : '<span class="td-muted">—</span>') + '</td>'
           + '<td class="td-sec td-trunc">' + esc(c.note || '—') + '</td>'
           + '<td class="td-sec">' + esc(c.date || '—') + '</td>'
@@ -266,15 +271,15 @@
       renderTable();
     };
     function updateSortIndicators() {
-      ['region','result','date'].forEach(c => {
+      ['city','result','date'].forEach(c => {
         const el = document.getElementById('si-' + c);
         if (el) el.textContent = (_sort.col === c) ? (_sort.dir > 0 ? '▲' : '▼') : '';
       });
     }
 
     window.exportCSV = function () {
-      const headers = ['Организация','Телефон','Регион','Имя ЛПР','Результат','Примечание','Дата'];
-      const rows = [headers].concat(allRows.map(c => [c.org_name, c.phone, c.region, c.lpr_name, c.result, c.note, c.date]));
+      const headers = ['Организация','Город','Имя ЛПР','Тел. ЛПР','Имейл ЛПР','Результат','Примечание','Дата'];
+      const rows = [headers].concat(allRows.map(c => [c.org_name, c.city, c.lpr_name, c.lpr_phone, c.lpr_email, c.result, c.note, c.date]));
       const csv = rows.map(r => r.map(v => {
         const s = String(v == null ? '' : v);
         return /[";\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
@@ -350,7 +355,7 @@
 
     .table-card { background:var(--white); border:1px solid var(--border); border-radius:var(--rad); overflow:hidden; box-shadow:var(--shadow); }
     table { width:100%; border-collapse:collapse; font-size:13px; table-layout:fixed; }
-    col.c1{width:20%} col.c2{width:13%} col.c3{width:12%} col.c4{width:11%} col.c5{width:13%} col.c6{width:21%} col.c7{width:10%}
+    col.c1{width:18%} col.c2{width:16%} col.c3{width:11%} col.c4{width:11%} col.c5{width:12%} col.c6{width:11%} col.c7{width:12%} col.c8{width:9%}
     thead tr { border-bottom:1px solid var(--border); }
     th { padding:10px 14px; text-align:left; font-size:11px; font-weight:500; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; background:#fafafa; }
     th.th-sort { cursor:pointer; user-select:none; }
@@ -472,16 +477,18 @@
     <div class="table-card">
       <div style="overflow-x:auto">
         <table>
-          <colgroup><col class="c1"><col class="c2"><col class="c3"><col class="c4"><col class="c5"><col class="c6"><col class="c7"></colgroup>
+          <colgroup><col class="c1"><col class="c2"><col class="c3"><col class="c4"><col class="c5"><col class="c6"><col class="c7"><col class="c8"></colgroup>
           <thead><tr>
-            <th>Организация</th><th>Телефон</th>
-            <th class="th-sort" onclick="setSort('region')">Регион <span class="sort-ind" id="si-region"></span></th>
+            <th>Организация</th>
+            <th class="th-sort" onclick="setSort('city')">Населённый пункт <span class="sort-ind" id="si-city"></span></th>
             <th>Имя ЛПР</th>
+            <th>Тел. ЛПР</th>
+            <th>Имейл ЛПР</th>
             <th class="th-sort" onclick="setSort('result')">Результат <span class="sort-ind" id="si-result"></span></th>
             <th>Примечание</th>
             <th class="th-sort" onclick="setSort('date')">Дата <span class="sort-ind" id="si-date"></span></th>
           </tr></thead>
-          <tbody id="tbody"><tr><td colspan="7" class="empty-cell">Загрузка...</td></tr></tbody>
+          <tbody id="tbody"><tr><td colspan="8" class="empty-cell">Загрузка...</td></tr></tbody>
         </table>
       </div>
       <div class="totals">
