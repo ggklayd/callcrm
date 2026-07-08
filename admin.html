@@ -650,6 +650,48 @@
       toast('Менеджер добавлен');
     };
 
+    // ── Определить часовые пояса (колонка «Часовой пояс») ───────
+    window.fillTimezones = async function() {
+      const id = window._dpId;
+      const p  = window.projects[id];
+      if (!p || !p.sheets_url) {
+        toast('Сначала укажите ссылку на Google Таблицу в настройках проекта');
+        return;
+      }
+      const match = p.sheets_url.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+      if (!match) {
+        toast('Неверная ссылка на таблицу');
+        return;
+      }
+      const sheetId = match[1];
+
+      const btn  = document.getElementById('btn-fill-tz');
+      const orig = btn.innerHTML;
+      btn.disabled    = true;
+      btn.textContent = 'Определяю...';
+
+      try {
+        const url  = BASE_WEBHOOK + '?action=fillTimezones&spreadsheetId=' + sheetId;
+        const resp = await fetch(url);
+        const data = await resp.json();
+
+        if (data.ok) {
+          btn.textContent = '✓ Готово: ' + (data.updated || 0) + ' / ' + (data.total || 0);
+          btn.style.background = '#16a34a';
+          toast('Часовые пояса: распознано ' + (data.updated || 0) + ' из ' + (data.total || 0)
+                + (data.unknown ? ', не определено ' + data.unknown : ''));
+        } else {
+          btn.disabled = false;
+          btn.innerHTML = orig;
+          toast('Ошибка: ' + (data.error || 'неизвестная'));
+        }
+      } catch (err) {
+        btn.disabled = false;
+        btn.innerHTML = orig;
+        toast('Ошибка сети: ' + err.message);
+      }
+    };
+
     // ── Создать интерфейс в Google Sheets ───────────────────────
     window.createInterface = async function() {
       const id = window._dpId;
@@ -1084,6 +1126,10 @@
       <p style="font-size:13px;color:var(--sec);margin-bottom:10px;line-height:1.5">Нажмите чтобы автоматически создать все заголовки колонок в Google Таблице. Сделайте это один раз перед загрузкой базы данных.</p>
       <button id="btn-create-iface" onclick="createInterface()" style="display:flex;align-items:center;gap:7px;padding:9px 18px;background:var(--accent);color:#fff;border:none;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .15s">
         &#9881; Создать интерфейс
+      </button>
+      <p style="font-size:13px;color:var(--sec);margin:16px 0 10px;line-height:1.5">Определить часовой пояс каждого контакта по столбцам «Регион» и «Населённый пункт» и записать в новый столбец «Часовой пояс» в конце таблицы.</p>
+      <button id="btn-fill-tz" onclick="fillTimezones()" style="display:flex;align-items:center;gap:7px;padding:9px 18px;background:#0f766e;color:#fff;border:none;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .15s">
+        &#128336; Определить часовые пояса
       </button>
     </div>
 
