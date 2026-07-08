@@ -91,6 +91,7 @@
         _stats = statsData;
         renderStatsForResp();
         renderManagers();
+        renderSources();
         allRows = buildRows(_range);
         renderTable();
         updateCounts();
@@ -116,8 +117,8 @@
       try {
         const resp = await fetch(url);
         const data = await resp.json();
-        return (data && data.ok) ? { project: data.project || {}, managers: data.managers || {} } : { project: {}, managers: {} };
-      } catch (e) { return { project: {}, managers: {} }; }
+        return (data && data.ok) ? { project: data.project || {}, managers: data.managers || {}, rubrics: data.rubrics || {} } : { project: {}, managers: {}, rubrics: {} };
+      } catch (e) { return { project: {}, managers: {}, rubrics: {} }; }
     }
     // Сводка: по выбранному ответственному (per-manager) либо по всему проекту
     function renderStatsForResp() {
@@ -146,32 +147,45 @@
       if (!_managers.length) { box.innerHTML = '<tr><td class="mgr-empty" colspan="19">Нет менеджеров</td></tr>'; return; }
       box.innerHTML = _managers.map(m => {
         const s = (_stats.managers && _stats.managers[m]) || {};
-        const bs = s.byStatus || {};
-        const g = k => bs[k] || 0;
-        const comp = s.totalCompanies || 0;
-        const pctLead = comp ? Math.round((s.leadCompanies || 0) / comp * 100) : 0;
-        const pctInt = comp ? Math.round((s.interestedCompanies || 0) / comp * 100) : 0;
-        return '<tr>'
-          + '<td class="mgr-cell"><span class="mgr-av" style="background:' + strColor(m) + '">' + ((m[0] || '?').toUpperCase()) + '</span><span class="mgr-name">' + esc(m) + '</span></td>'
-          + '<td>' + comp + '</td>'
-          + '<td>' + (s.totalDialogs || 0) + '</td>'
-          + '<td>' + (s.leadCompanies || 0) + '</td>'
-          + '<td>' + (s.kplprCompanies || 0) + '</td>'
-          + '<td>' + pctLead + '%</td>'
-          + '<td>' + pctInt + '%</td>'
-          + '<td>' + g('Отказ Сек') + '</td>'
-          + '<td>' + g('КП Сек') + '</td>'
-          + '<td>' + g('Перезвон Сек') + '</td>'
-          + '<td>' + g('Отказ ЛПР') + '</td>'
-          + '<td>' + g('Перезвон ЛПР') + '</td>'
-          + '<td>' + g('Недозвон') + '</td>'
-          + '<td>' + g('Не абонент') + '</td>'
-          + '<td>' + g('Дубль') + '</td>'
-          + '<td>' + g('Не компания') + '</td>'
-          + '<td>' + g('Частное лицо') + '</td>'
-          + '<td>' + (s.emptyContacts || 0) + '</td>'
-          + '<td>' + lastActShort(s) + '</td>'
-          + '</tr>';
+        return '<tr><td class="mgr-cell"><span class="mgr-av" style="background:' + strColor(m) + '">' + ((m[0] || '?').toUpperCase()) + '</span><span class="mgr-name">' + esc(m) + '</span></td>' + statCells(s) + '</tr>';
+      }).join('');
+    }
+    // Ячейки-метрики (одинаковые для менеджеров и источников)
+    function statCells(s) {
+      const bs = s.byStatus || {};
+      const g = k => bs[k] || 0;
+      const comp = s.totalCompanies || 0;
+      const pctLead = comp ? Math.round((s.leadCompanies || 0) / comp * 100) : 0;
+      const pctInt = comp ? Math.round((s.interestedCompanies || 0) / comp * 100) : 0;
+      return '<td>' + comp + '</td>'
+        + '<td>' + (s.totalDialogs || 0) + '</td>'
+        + '<td>' + (s.leadCompanies || 0) + '</td>'
+        + '<td>' + (s.kplprCompanies || 0) + '</td>'
+        + '<td>' + pctLead + '%</td>'
+        + '<td>' + pctInt + '%</td>'
+        + '<td>' + g('Отказ Сек') + '</td>'
+        + '<td>' + g('КП Сек') + '</td>'
+        + '<td>' + g('Перезвон Сек') + '</td>'
+        + '<td>' + g('Отказ ЛПР') + '</td>'
+        + '<td>' + g('Перезвон ЛПР') + '</td>'
+        + '<td>' + g('Недозвон') + '</td>'
+        + '<td>' + g('Не абонент') + '</td>'
+        + '<td>' + g('Дубль') + '</td>'
+        + '<td>' + g('Не компания') + '</td>'
+        + '<td>' + g('Частное лицо') + '</td>'
+        + '<td>' + (s.emptyContacts || 0) + '</td>'
+        + '<td>' + lastActShort(s) + '</td>';
+    }
+    // Статистика по источникам (рубрика — столбец M), сортировка по числу компаний
+    function renderSources() {
+      const box = document.getElementById('src-list');
+      if (!box) return;
+      const rubs = _stats.rubrics || {};
+      const names = Object.keys(rubs).sort((a, b) => (rubs[b].totalCompanies || 0) - (rubs[a].totalCompanies || 0));
+      if (!names.length) { box.innerHTML = '<tr><td class="mgr-empty" colspan="19">Нет данных</td></tr>'; return; }
+      box.innerHTML = names.map(r => {
+        const s = rubs[r] || {};
+        return '<tr><td class="mgr-cell src-name" title="' + esc(r).replace(/"/g, '&quot;') + '">' + esc(r) + '</td>' + statCells(s) + '</tr>';
       }).join('');
     }
     function computeRange() {
@@ -189,6 +203,7 @@
       _stats = await fetchStats();
       renderStatsForResp();
       renderManagers();
+      renderSources();
       allRows = buildRows(_range);
       renderTable();
       updateCounts();
@@ -446,6 +461,7 @@
     .mgr-table td { text-align:center; padding:8px 7px; border-bottom:1px solid var(--border); white-space:nowrap; color:var(--text); font-weight:600; vertical-align:middle; }
     .mgr-table tr:last-child td { border-bottom:none; }
     .mgr-table td.mgr-cell { text-align:left; overflow:visible; text-overflow:clip; }
+    .mgr-table td.mgr-cell.src-name { overflow:hidden; text-overflow:ellipsis; max-width:220px; }
     .mgr-av { display:inline-flex; width:26px; height:26px; border-radius:50%; align-items:center; justify-content:center; font-size:11px; font-weight:600; color:#fff; vertical-align:middle; margin-right:8px; }
     .mgr-name { vertical-align:middle; font-weight:600; color:var(--text); }
     .mgr-empty { font-size:13px; color:var(--muted); padding:8px 0; text-align:left; }
@@ -570,6 +586,23 @@
             <th>Пустых контактов</th><th>Активность</th>
           </tr></thead>
           <tbody id="mgr-list"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="mgr-card">
+      <div class="mgr-title">Статистика по источникам</div>
+      <div class="mgr-scroll">
+        <table class="mgr-table">
+          <thead><tr>
+            <th class="mgr-th-name">Источник</th>
+            <th>Компаний</th><th>Диалогов</th><th>Лидов</th><th>КП ЛПР</th><th>Конв. лид</th><th>Конв. заинт.</th>
+            <th>Отказ Сек</th><th>КП Сек</th><th>Перезвон Сек</th><th>Отказ ЛПР</th><th>Перезвон ЛПР</th>
+            <th>Недозвон</th>
+            <th>Не абонент</th><th>Дубль</th><th>Не компания</th><th>Частное лицо</th>
+            <th>Пустых контактов</th><th>Активность</th>
+          </tr></thead>
+          <tbody id="src-list"></tbody>
         </table>
       </div>
     </div>
