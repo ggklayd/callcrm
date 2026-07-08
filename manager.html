@@ -299,7 +299,7 @@
       if (!window._spreadsheetId) { showStatus('err', 'Таблица не привязана к проекту. Обратитесь к администратору.'); return; }
       showStatus('load', 'Загружаю список контактов...');
       try {
-        const url  = WEBHOOK + '?action=getAllClients&manager=' + encodeURIComponent(MANAGER) + '&spreadsheetId=' + window._spreadsheetId;
+        const url  = WEBHOOK + '?action=getAllClients&manager=' + encodeURIComponent(MANAGER) + '&assignedOnly=1&spreadsheetId=' + window._spreadsheetId;
         const resp = await fetch(url);
         const data = await resp.json();
         if (!data.ok) { showStatus('err', 'Ошибка: ' + (data.error || 'неизвестная')); return; }
