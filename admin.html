@@ -567,12 +567,28 @@
         const now = Date.now();
         const mCbs = (window._callbacksByProject[projectId] || []).filter(c => (c.manager || '') === m);
         const mMissed = mCbs.filter(c => cbTime(c) < now).length;
+
+        // Разбивка по статусам звонков — кол-во попыток менеджера за выбранный период
+        const bs = s.byStatus || {};
+        const st = (label, key, cls) => '<span class="mst-item">' + label + ' <b' + (cls ? ' class="' + cls + '"' : '') + '>' + (bs[key] || 0) + '</b></span>';
+        // Основные статусы — показываем всегда (даже при 0)
+        const stMain = st('Недозвон', 'Недозвон', 'mst-orange')
+          + st('Отказ Сек', 'Отказ Сек', 'mst-red')
+          + st('Отказ ЛПР', 'Отказ ЛПР', 'mst-pink')
+          + st('КП Сек', 'КП Сек', 'mst-blue')
+          + st('Перезвон Сек', 'Перезвон Сек', 'mst-yellow')
+          + st('Перезвон ЛПР', 'Перезвон ЛПР', 'mst-amber');
+        // Прочие статусы — только если есть (чтобы не засорять нулями)
+        const stJunk = [['Не абонент', 'Не абонент'], ['Дубль', 'Дубль'], ['Не компания', 'Не компания'], ['Частное лицо', 'Частное лицо']]
+          .filter(([, k]) => bs[k]).map(([lbl, k]) => st(lbl, k, 'mst-gray')).join('');
+
         el.innerHTML =
             '<span class="mst-item">Диалогов <b>' + (s.totalDialogs || 0) + '</b></span>'
           + '<span class="mst-item">Компаний <b>' + comp + '</b></span>'
           + '<span class="mst-item">Лидов <b class="mst-green">' + (s.leadCompanies || 0) + '</b></span>'
           + '<span class="mst-item">КП ЛПР <b class="mst-indigo">' + (s.kplprCompanies || 0) + '</b></span>'
           + '<span class="mst-item">Конв. <b class="mst-green">' + pctLead + '%</b></span>'
+          + stMain + stJunk
           + '<span class="mst-item">Обработано <b>' + done + '/' + total + '</b></span>'
           + '<span class="mst-item">Активность <b>' + lastActShort(s) + '</b></span>'
           + '<span class="mst-item">Перезвоны <b>' + mCbs.length + '</b>' + (mMissed ? ' · <b class="mst-red">' + mMissed + ' просроч.</b>' : '') + '</span>';
@@ -923,6 +939,12 @@
     .mst-item b.mst-green{color:#16a34a}
     .mst-item b.mst-indigo{color:#4338ca}
     .mst-item b.mst-red{color:#dc2626}
+    .mst-item b.mst-orange{color:#c2410c}
+    .mst-item b.mst-pink{color:#be185d}
+    .mst-item b.mst-blue{color:#1d4ed8}
+    .mst-item b.mst-yellow{color:#ca8a04}
+    .mst-item b.mst-amber{color:#a16207}
+    .mst-item b.mst-gray{color:#6b7280}
     .dp-name-row{display:flex;align-items:center;gap:8px}
     .dp-edit{background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;padding:2px 5px;border-radius:5px;line-height:1}
     .dp-edit:hover{color:var(--accent);background:var(--bg)}
