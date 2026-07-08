@@ -298,14 +298,15 @@
     .leg { display:flex; align-items:center; gap:5px; font-size:13px; color:var(--sec); }
     .leg-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
 
-    .filter-bar { background:var(--white); border:1px solid var(--border); border-radius:var(--rad); padding:10px 14px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; box-shadow:var(--shadow); }
+    .filter-bar { background:var(--white); border:1px solid var(--border); border-radius:var(--rad); padding:10px 14px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; box-shadow:var(--shadow); }
+    .fb-group { display:flex; align-items:center; gap:6px; flex-wrap:wrap; flex:1 1 auto; min-width:0; }
     .filter-label { font-size:13px; color:var(--sec); margin-right:4px; }
     .fb { display:flex; align-items:center; gap:5px; padding:5px 14px; border-radius:6px; border:1px solid var(--border2); background:var(--white); color:var(--sec); font-size:13px; font-weight:500; cursor:pointer; font-family:inherit; transition:all .12s; }
     .fb:hover { border-color:#9ca3af; color:var(--text); }
     .fb.active { background:var(--text); border-color:var(--text); color:#fff; }
     .fb-cnt { font-size:11px; background:rgba(0,0,0,.08); padding:1px 6px; border-radius:10px; }
     .fb.active .fb-cnt { background:rgba(255,255,255,.2); }
-    .search-box { margin-left:auto; display:flex; align-items:center; gap:7px; border:1px solid var(--border2); border-radius:6px; padding:5px 10px; background:var(--white); }
+    .search-box { flex:0 0 auto; display:flex; align-items:center; gap:7px; border:1px solid var(--border2); border-radius:6px; padding:5px 10px; background:var(--white); }
     .search-box svg { width:14px; height:14px; color:var(--muted); flex-shrink:0; }
     .search-box input { border:none; outline:none; font-size:13px; color:var(--text); width:180px; font-family:inherit; background:transparent; }
     .search-box input::placeholder { color:var(--muted); }
@@ -411,13 +412,15 @@
     </div>
 
     <div class="filter-bar">
-      <span class="filter-label">Результат:</span>
-      <button class="fb active" data-val="все"      onclick="setFilter(this,'все')">Все <span class="fb-cnt">0</span></button>
-      <button class="fb"        data-val="лид"      onclick="setFilter(this,'лид')">Лид <span class="fb-cnt">0</span></button>
-      <button class="fb"        data-val="кп"       onclick="setFilter(this,'кп')">КП <span class="fb-cnt">0</span></button>
-      <button class="fb"        data-val="перезвон" onclick="setFilter(this,'перезвон')">Перезвон <span class="fb-cnt">0</span></button>
-      <button class="fb"        data-val="отказ"    onclick="setFilter(this,'отказ')">Отказ <span class="fb-cnt">0</span></button>
-      <button class="fb"        data-val="недозвон" onclick="setFilter(this,'недозвон')">Недозвон <span class="fb-cnt">0</span></button>
+      <div class="fb-group">
+        <span class="filter-label">Результат:</span>
+        <button class="fb active" data-val="все"      onclick="setFilter(this,'все')">Все <span class="fb-cnt">0</span></button>
+        <button class="fb"        data-val="лид"      onclick="setFilter(this,'лид')">Лид <span class="fb-cnt">0</span></button>
+        <button class="fb"        data-val="кп"       onclick="setFilter(this,'кп')">КП <span class="fb-cnt">0</span></button>
+        <button class="fb"        data-val="перезвон" onclick="setFilter(this,'перезвон')">Перезвон <span class="fb-cnt">0</span></button>
+        <button class="fb"        data-val="отказ"    onclick="setFilter(this,'отказ')">Отказ <span class="fb-cnt">0</span></button>
+        <button class="fb"        data-val="недозвон" onclick="setFilter(this,'недозвон')">Недозвон <span class="fb-cnt">0</span></button>
+      </div>
       <div class="search-box">
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8.5" cy="8.5" r="5.5"/><path d="M15 15l-3-3"/></svg>
         <input type="text" placeholder="Поиск по организации..." oninput="onSearch(this.value)">
