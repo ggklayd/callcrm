@@ -77,17 +77,21 @@
         _sid = m[1];
         _mParam = encodeURIComponent(managers.join(','));
 
-        // 2. Строки таблицы (getAllClients по менеджерам) — грузим один раз
-        const results = await Promise.all(managers.map(async mgr => {
-          try {
-            const r = await fetch(BASE_WEBHOOK + '?action=getAllClients&manager=' + encodeURIComponent(mgr) + '&spreadsheetId=' + _sid);
-            const d = await r.json();
-            return (d.ok && Array.isArray(d.clients)) ? d.clients : [];
-          } catch (e) { return []; }
-        }));
-        _raw = results.flat();
-
-        await applyRange();   // считает сводку (сервер) + строит таблицу (клиент)
+        // 2. Все строки одним запросом (all=1) + сводка — параллельно.
+        //    Раньше был полный скан таблицы на КАЖДОГО менеджера; теперь один общий скан.
+        _range = computeRange();
+        const dmBtn = document.getElementById('dm-all');
+        if (dmBtn) dmBtn.classList.toggle('active', !_range);
+        const [allData, statsData] = await Promise.all([
+          fetch(BASE_WEBHOOK + '?action=getAllClients&all=1&spreadsheetId=' + _sid).then(r => r.json()).catch(() => ({})),
+          fetchStats()
+        ]);
+        _raw   = (allData && allData.ok && Array.isArray(allData.clients)) ? allData.clients : [];
+        _stats = statsData;
+        renderStatsForResp();
+        allRows = buildRows(_range);
+        renderTable();
+        updateCounts();
 
         document.getElementById('loading').style.display = 'none';
         document.getElementById('main').style.display    = 'block';
