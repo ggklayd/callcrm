@@ -82,8 +82,7 @@
         // 2. Все строки одним запросом (all=1) + сводка — параллельно.
         //    Раньше был полный скан таблицы на КАЖДОГО менеджера; теперь один общий скан.
         _range = computeRange();
-        const dmBtn = document.getElementById('dm-all');
-        if (dmBtn) dmBtn.classList.toggle('active', !_range);
+        updateRangeButtons();
         const [allData, statsData] = await Promise.all([
           fetch(BASE_WEBHOOK + '?action=getAllClients&all=1&spreadsheetId=' + _sid).then(r => r.json()).catch(() => ({})),
           fetchStats()
@@ -186,8 +185,7 @@
     // Применить диапазон: пересчитать сводку (сервер) и таблицу (из сырых строк)
     window.applyRange = async function () {
       _range = computeRange();
-      const btn = document.getElementById('dm-all');
-      if (btn) btn.classList.toggle('active', !_range);
+      updateRangeButtons();
       _stats = await fetchStats();
       renderStatsForResp();
       renderManagers();
@@ -195,9 +193,33 @@
       renderTable();
       updateCounts();
     };
+    function dPad(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+    function todayISO() { return dPad(new Date()); }
+    function yesterdayISO() { const d = new Date(); d.setDate(d.getDate() - 1); return dPad(d); }
+    function updateRangeButtons() {
+      const f = (document.getElementById('r-from') || {}).value || '';
+      const t = (document.getElementById('r-to') || {}).value || '';
+      const today = todayISO(), yest = yesterdayISO();
+      const set = (id, on) => { const b = document.getElementById(id); if (b) b.classList.toggle('active', on); };
+      set('dm-all', !f && !t);
+      set('dm-today', f === today && t === today);
+      set('dm-yest', f === yest && t === yest);
+    }
     window.setAllRange = function () {
       const f = document.getElementById('r-from'); if (f) f.value = '';
       const t = document.getElementById('r-to');   if (t) t.value = '';
+      applyRange();
+    };
+    window.setToday = function () {
+      const v = todayISO();
+      const a = document.getElementById('r-from'); if (a) a.value = v;
+      const b = document.getElementById('r-to');   if (b) b.value = v;
+      applyRange();
+    };
+    window.setYesterday = function () {
+      const v = yesterdayISO();
+      const a = document.getElementById('r-from'); if (a) a.value = v;
+      const b = document.getElementById('r-to');   if (b) b.value = v;
       applyRange();
     };
 
@@ -380,6 +402,8 @@
     .daterow { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
     .dinp { border:1px solid var(--border2); border-radius:6px; padding:5px 8px; font-size:13px; font-family:inherit; color:var(--text); outline:none; background:var(--white); cursor:pointer; }
     .dinp:focus { border-color:var(--accent); }
+    .dm-apply { padding:6px 16px; border-radius:6px; border:none; background:var(--accent); color:#fff; font-size:13px; font-weight:600; cursor:pointer; font-family:inherit; }
+    .dm-apply:hover { opacity:.9; }
 
     .stats { display:grid; grid-template-columns:repeat(5,1fr); gap:12px; background:var(--white); border:1px solid var(--border); border-radius:var(--rad); padding:20px; box-shadow:var(--shadow); }
     .stat-item { display:flex; flex-direction:column; gap:2px; }
@@ -489,9 +513,12 @@
     <div class="daterow">
       <span class="filter-label">Период:</span>
       <button id="dm-all" class="fb active" onclick="setAllRange()">Всего</button>
-      <input type="date" id="r-from" class="dinp" onchange="applyRange()">
+      <button id="dm-today" class="fb" onclick="setToday()">Сегодня</button>
+      <button id="dm-yest" class="fb" onclick="setYesterday()">Вчера</button>
+      <input type="date" id="r-from" class="dinp">
       <span style="color:var(--muted)">—</span>
-      <input type="date" id="r-to" class="dinp" onchange="applyRange()">
+      <input type="date" id="r-to" class="dinp">
+      <button class="dm-apply" onclick="applyRange()">Применить</button>
       <span class="filter-label" style="margin-left:14px">Ответственный:</span>
       <select id="resp-filter" class="dinp" onchange="setResp(this.value)"><option value="">Все</option></select>
     </div>
