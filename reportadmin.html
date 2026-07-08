@@ -33,6 +33,71 @@
     let _resp = '';                                // выбранный ответственный ('' = все)
     let _sort = { col: '', dir: 1 };               // сортировка таблицы
     let _managers = [];                            // менеджеры проекта (для блока статистики)
+    let _mgrSort = { col: 'dial', dir: -1 };       // сортировка блока менеджеров (по умолчанию — Диалогов ↓)
+    let _srcSort = { col: 'dial', dir: -1 };       // сортировка блока источников (по умолчанию — Диалогов ↓)
+    // Порядок колонок статистики (совпадает с шапкой обоих блоков)
+    const STAT_COLS = ['name','comp','dial','lead','kplpr','convLead','convInt','otkazSek','kpSek','perSek','otkazLpr','perLpr','nedoz','neab','dubl','nekomp','chastn','empty','act'];
+    function statVal(s, col) {
+      const bs = s.byStatus || {}; const comp = s.totalCompanies || 0;
+      switch (col) {
+        case 'comp': return comp;
+        case 'dial': return s.totalDialogs || 0;
+        case 'lead': return s.leadCompanies || 0;
+        case 'kplpr': return s.kplprCompanies || 0;
+        case 'convLead': return comp ? (s.leadCompanies || 0) / comp : 0;
+        case 'convInt': return comp ? (s.interestedCompanies || 0) / comp : 0;
+        case 'otkazSek': return bs['Отказ Сек'] || 0;
+        case 'kpSek': return bs['КП Сек'] || 0;
+        case 'perSek': return bs['Перезвон Сек'] || 0;
+        case 'otkazLpr': return bs['Отказ ЛПР'] || 0;
+        case 'perLpr': return bs['Перезвон ЛПР'] || 0;
+        case 'nedoz': return bs['Недозвон'] || 0;
+        case 'neab': return bs['Не абонент'] || 0;
+        case 'dubl': return bs['Дубль'] || 0;
+        case 'nekomp': return bs['Не компания'] || 0;
+        case 'chastn': return bs['Частное лицо'] || 0;
+        case 'empty': return s.emptyContacts || 0;
+        case 'act': return s.lastActivityKey || 0;
+        default: return 0;
+      }
+    }
+    // Ограничить таблицу n строками (шапка + n строк), остальное — вертикальная прокрутка
+    function limitToRows(scrollEl, n) {
+      if (!scrollEl) return;
+      const table = scrollEl.querySelector('table');
+      const body = table && table.tBodies[0];
+      if (!body) return;
+      const rows = body.rows;
+      if (rows.length <= n) { scrollEl.style.maxHeight = 'none'; return; }
+      let h = table.tHead ? table.tHead.offsetHeight : 0;
+      for (let i = 0; i < n && i < rows.length; i++) h += rows[i].offsetHeight;
+      scrollEl.style.maxHeight = (h + 15) + 'px';   // +полоса горизонтальной прокрутки
+    }
+    // Клик по заголовку блока статистики → сортировка (стрелка ▲/▼)
+    function setupStatSort(tbodyId, sortState, renderFn) {
+      const body = document.getElementById(tbodyId);
+      if (!body) return;
+      const table = body.closest('table');
+      const ths = table.tHead.rows[0].cells;
+      const paint = () => {
+        for (let j = 0; j < ths.length; j++) {
+          const ind = ths[j].querySelector('.sort-ind');
+          if (ind) ind.textContent = (STAT_COLS[j] === sortState.col) ? (sortState.dir > 0 ? ' ▲' : ' ▼') : '';
+        }
+      };
+      for (let i = 0; i < ths.length; i++) {
+        const col = STAT_COLS[i];
+        ths[i].classList.add('th-sort');
+        if (!ths[i].querySelector('.sort-ind')) { const sp = document.createElement('span'); sp.className = 'sort-ind'; ths[i].appendChild(sp); }
+        ths[i].onclick = () => {
+          if (sortState.col === col) sortState.dir *= -1;
+          else { sortState.col = col; sortState.dir = (col === 'name') ? 1 : -1; }
+          renderFn();
+          paint();
+        };
+      }
+      paint();   // начальный индикатор (по умолчанию — Диалогов ↓)
+    }
     const RESULT_ORDER = ['Лид','КП ЛПР','КП Сек','Перезвон ЛПР','Перезвон Сек','Отказ ЛПР','Отказ Сек','Недозвон','Не абонент','Дубль','Не компания','Частное лицо'];
     function resultRank(r) { const i = RESULT_ORDER.indexOf(r); return i < 0 ? 999 : i; }
 
@@ -92,6 +157,8 @@
         renderStatsForResp();
         renderManagers();
         renderSources();
+        setupStatSort('mgr-list', _mgrSort, renderManagers);
+        setupStatSort('src-list', _srcSort, renderSources);
         allRows = buildRows(_range);
         renderTable();
         updateCounts();
@@ -144,11 +211,20 @@
     function renderManagers() {
       const box = document.getElementById('mgr-list');
       if (!box) return;
-      if (!_managers.length) { box.innerHTML = '<tr><td class="mgr-empty" colspan="19">Нет менеджеров</td></tr>'; return; }
-      box.innerHTML = _managers.map(m => {
+      if (!_managers.length) { box.innerHTML = '<tr><td class="mgr-empty" colspan="19">Нет менеджеров</td></tr>'; limitToRows(box.closest('.mgr-scroll'), 5); return; }
+      let list = _managers.slice();
+      if (_mgrSort.col) {
+        list.sort((a, b) => {
+          if (_mgrSort.col === 'name') return a.localeCompare(b, 'ru') * _mgrSort.dir;
+          const sa = (_stats.managers && _stats.managers[a]) || {}, sb = (_stats.managers && _stats.managers[b]) || {};
+          return (statVal(sa, _mgrSort.col) - statVal(sb, _mgrSort.col)) * _mgrSort.dir;
+        });
+      }
+      box.innerHTML = list.map(m => {
         const s = (_stats.managers && _stats.managers[m]) || {};
         return '<tr><td class="mgr-cell"><span class="mgr-av" style="background:' + strColor(m) + '">' + ((m[0] || '?').toUpperCase()) + '</span><span class="mgr-name">' + esc(m) + '</span></td>' + statCells(s) + '</tr>';
       }).join('');
+      limitToRows(box.closest('.mgr-scroll'), 5);
     }
     // Ячейки-метрики (одинаковые для менеджеров и источников)
     function statCells(s) {
@@ -181,12 +257,21 @@
       const box = document.getElementById('src-list');
       if (!box) return;
       const rubs = _stats.rubrics || {};
-      const names = Object.keys(rubs).sort((a, b) => (rubs[b].totalCompanies || 0) - (rubs[a].totalCompanies || 0));
-      if (!names.length) { box.innerHTML = '<tr><td class="mgr-empty" colspan="19">Нет данных</td></tr>'; return; }
+      let names = Object.keys(rubs);
+      if (!names.length) { box.innerHTML = '<tr><td class="mgr-empty" colspan="19">Нет данных</td></tr>'; limitToRows(box.closest('.mgr-scroll'), 5); return; }
+      if (_srcSort.col) {
+        names.sort((a, b) => {
+          if (_srcSort.col === 'name') return a.localeCompare(b, 'ru') * _srcSort.dir;
+          return (statVal(rubs[a], _srcSort.col) - statVal(rubs[b], _srcSort.col)) * _srcSort.dir;
+        });
+      } else {
+        names.sort((a, b) => (rubs[b].totalCompanies || 0) - (rubs[a].totalCompanies || 0));   // по умолчанию — по компаниям
+      }
       box.innerHTML = names.map(r => {
         const s = rubs[r] || {};
         return '<tr><td class="mgr-cell src-name" title="' + esc(r).replace(/"/g, '&quot;') + '">' + esc(r) + '</td>' + statCells(s) + '</tr>';
       }).join('');
+      limitToRows(box.closest('.mgr-scroll'), 5);
     }
     function computeRange() {
       const f = isoToKey(document.getElementById('r-from')?.value);
@@ -454,9 +539,11 @@
 
     .mgr-card { background:var(--white); border:1px solid var(--border); border-radius:var(--rad); padding:14px 18px; box-shadow:var(--shadow); }
     .mgr-title { font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:8px; }
-    .mgr-scroll { overflow-x:auto; }
+    .mgr-scroll { overflow:auto; }
     .mgr-table { width:100%; border-collapse:collapse; font-size:11px; }
-    .mgr-table th { text-align:center; font-weight:500; color:var(--muted); padding:5px 7px; border-bottom:1px solid var(--border); vertical-align:middle; line-height:1.25; }
+    .mgr-table th { text-align:center; font-weight:500; color:var(--muted); padding:5px 7px; border-bottom:1px solid var(--border); vertical-align:middle; line-height:1.25; position:sticky; top:0; background:var(--white); z-index:1; }
+    .mgr-table th.th-sort { cursor:pointer; user-select:none; }
+    .mgr-table th.th-sort:hover { color:var(--sec); }
     .mgr-table th.mgr-th-name { text-align:left; width:160px; }
     .mgr-table td { text-align:center; padding:8px 7px; border-bottom:1px solid var(--border); white-space:nowrap; color:var(--text); font-weight:600; vertical-align:middle; }
     .mgr-table tr:last-child td { border-bottom:none; }
