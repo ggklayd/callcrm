@@ -32,6 +32,7 @@
     let _stats = { project: {}, managers: {} };   // весь ответ getProjectStats
     let _resp = '';                                // выбранный ответственный ('' = все)
     let _sort = { col: '', dir: 1 };               // сортировка таблицы
+    let _view = [];                                // текущий отрисованный список (для модалки примечания)
     const RESULT_ORDER = ['Лид','КП ЛПР','КП Сек','Перезвон ЛПР','Перезвон Сек','Отказ ЛПР','Отказ Сек','Недозвон','Не абонент','Дубль','Не компания','Частное лицо'];
     function resultRank(r) { const i = RESULT_ORDER.indexOf(r); return i < 0 ? 999 : i; }
 
@@ -221,7 +222,8 @@
       }
       const tbody = document.getElementById('tbody');
       if (!list.length) { tbody.innerHTML = '<tr><td colspan="8" class="empty-cell">Нет данных</td></tr>'; renderTotals([]); return; }
-      tbody.innerHTML = list.map(c => {
+      _view = list;
+      tbody.innerHTML = list.map((c, i) => {
         const cls = STATUS_COLORS[c.result] || 'st-gray';
         return '<tr' + (c.isLpr ? ' class="row-lpr"' : '') + '>'
           + '<td class="td-org">' + esc(c.org_name || '—') + '</td>'
@@ -230,7 +232,7 @@
           + '<td class="td-sec">' + esc(c.lpr_phone || '—') + '</td>'
           + '<td class="td-sec">' + esc(c.lpr_email || '—') + '</td>'
           + '<td class="td-badge">' + (c.result ? '<span class="badge ' + cls + '">' + esc(c.result) + '</span>' : '<span class="td-muted">—</span>') + '</td>'
-          + '<td class="td-sec td-trunc">' + esc(c.note || '—') + '</td>'
+          + '<td class="td-sec td-trunc' + (c.note ? ' td-note' : '') + '"' + (c.note ? ' onclick="openNote(' + i + ')"' : '') + ' title="' + esc(c.note || '').replace(/"/g, '&quot;') + '">' + esc(c.note || '—') + '</td>'
           + '<td class="td-sec">' + esc(c.date || '—') + '</td>'
           + '</tr>';
       }).join('');
@@ -276,6 +278,19 @@
         if (el) el.textContent = (_sort.col === c) ? (_sort.dir > 0 ? '▲' : '▼') : '';
       });
     }
+    // Модалка полного примечания
+    window.openNote = function (i) {
+      const c = _view[i];
+      if (!c) return;
+      document.getElementById('nm-org').textContent = c.org_name || '—';
+      const cls = STATUS_COLORS[c.result] || 'st-gray';
+      document.getElementById('nm-badge').innerHTML = c.result ? '<span class="badge ' + cls + '">' + esc(c.result) + '</span>' : '';
+      document.getElementById('nm-meta').textContent = [c.city, c.lpr_name, c.date].filter(Boolean).join('   ·   ');
+      document.getElementById('nm-body').textContent = c.note || '';
+      document.getElementById('note-modal').classList.add('show');
+    };
+    window.closeNote = function () { document.getElementById('note-modal').classList.remove('show'); };
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeNote(); });
 
     window.exportCSV = function () {
       const headers = ['Организация','Город','Имя ЛПР','Тел. ЛПР','Имейл ЛПР','Результат','Примечание','Дата'];
@@ -315,7 +330,7 @@
     .refresh { margin-left:auto; display:flex; align-items:center; gap:8px; font-size:12px; font-weight:500; color:var(--sec); background:var(--white); border:1px solid var(--border2); padding:5px 12px; border-radius:20px; cursor:pointer; font-family:inherit; transition:all .12s; }
     .refresh:hover { border-color:var(--accent); color:var(--accent); }
 
-    .page { max-width:1040px; margin:0 auto; padding:20px 20px 60px; display:flex; flex-direction:column; gap:16px; }
+    .page { max-width:1600px; margin:0 auto; padding:20px 20px 60px; display:flex; flex-direction:column; gap:16px; }
 
     .daterow { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
     .dinp { border:1px solid var(--border2); border-radius:6px; padding:5px 8px; font-size:13px; font-family:inherit; color:var(--text); outline:none; background:var(--white); cursor:pointer; }
@@ -355,7 +370,7 @@
 
     .table-card { background:var(--white); border:1px solid var(--border); border-radius:var(--rad); overflow:hidden; box-shadow:var(--shadow); }
     table { width:100%; border-collapse:collapse; font-size:13px; table-layout:fixed; }
-    col.c1{width:18%} col.c2{width:16%} col.c3{width:11%} col.c4{width:11%} col.c5{width:12%} col.c6{width:11%} col.c7{width:12%} col.c8{width:9%}
+    col.c1{width:14%} col.c2{width:12%} col.c3{width:10%} col.c4{width:10%} col.c5{width:13%} col.c6{width:9%} col.c7{width:23%} col.c8{width:9%}
     thead tr { border-bottom:1px solid var(--border); }
     th { padding:10px 14px; text-align:left; font-size:11px; font-weight:500; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; background:#fafafa; }
     th.th-sort { cursor:pointer; user-select:none; }
@@ -369,8 +384,18 @@
     .td-pri { font-weight:500; color:var(--text); }
     .td-sec { color:var(--sec); }
     .td-muted { color:var(--muted); }
-    .td-trunc { max-width:180px; }
     .empty-cell { text-align:center; padding:40px; color:var(--muted); }
+    .td-note { cursor:pointer; }
+    .td-note:hover { color:var(--accent); text-decoration:underline; }
+    .note-modal { position:fixed; inset:0; background:rgba(15,23,42,.45); display:none; align-items:center; justify-content:center; padding:20px; z-index:100; }
+    .note-modal.show { display:flex; }
+    .note-card { background:var(--white); border-radius:12px; box-shadow:0 20px 60px rgba(0,0,0,.3); max-width:560px; width:100%; max-height:80vh; overflow:auto; padding:22px 24px; position:relative; }
+    .note-close { position:absolute; top:10px; right:14px; border:none; background:transparent; font-size:26px; line-height:1; color:var(--muted); cursor:pointer; font-family:inherit; }
+    .note-close:hover { color:var(--text); }
+    .note-head { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:6px; padding-right:28px; }
+    .note-org { font-size:16px; font-weight:700; color:var(--text); }
+    .note-meta { font-size:12px; color:var(--muted); margin-bottom:14px; }
+    .note-body { font-size:14px; line-height:1.6; color:var(--text); white-space:pre-wrap; word-break:break-word; }
 
     .badge { display:inline-flex; align-items:center; font-size:12px; font-weight:500; padding:3px 9px; border-radius:20px; white-space:nowrap; }
     .st-lid   { background:#dcfce7; color:#16a34a; }
@@ -506,6 +531,18 @@
       </div>
     </div>
 
+  </div>
+</div>
+
+<div id="note-modal" class="note-modal" onclick="closeNote()">
+  <div class="note-card" onclick="event.stopPropagation()">
+    <button class="note-close" onclick="closeNote()" title="Закрыть">&times;</button>
+    <div class="note-head">
+      <span class="note-org" id="nm-org"></span>
+      <span id="nm-badge"></span>
+    </div>
+    <div class="note-meta" id="nm-meta"></div>
+    <div class="note-body" id="nm-body"></div>
   </div>
 </div>
 
