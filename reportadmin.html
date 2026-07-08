@@ -32,6 +32,7 @@
     let _stats = { project: {}, managers: {} };   // весь ответ getProjectStats
     let _resp = '';                                // выбранный ответственный ('' = все)
     let _sort = { col: '', dir: 1 };               // сортировка таблицы
+    let _managers = [];                            // менеджеры проекта (для блока статистики)
     const RESULT_ORDER = ['Лид','КП ЛПР','КП Сек','Перезвон ЛПР','Перезвон Сек','Отказ ЛПР','Отказ Сек','Недозвон','Не абонент','Дубль','Не компания','Частное лицо'];
     function resultRank(r) { const i = RESULT_ORDER.indexOf(r); return i < 0 ? 999 : i; }
 
@@ -70,6 +71,7 @@
         document.title = (p.name || PROJECT) + ' — Отчёт';
 
         const managers = (p.managers || []).filter(Boolean);
+        _managers = managers;
         const rsel = document.getElementById('resp-filter');
         if (rsel) rsel.innerHTML = '<option value="">Все</option>' + managers.map(x => '<option value="' + esc(x) + '">' + esc(x) + '</option>').join('');
         const m = (p.sheets_url || '').match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
@@ -89,6 +91,7 @@
         _raw   = (allData && allData.ok && Array.isArray(allData.clients)) ? allData.clients : [];
         _stats = statsData;
         renderStatsForResp();
+        renderManagers();
         allRows = buildRows(_range);
         renderTable();
         updateCounts();
@@ -122,6 +125,55 @@
       const src = (_resp && _stats.managers && _stats.managers[_resp]) ? _stats.managers[_resp] : _stats.project;
       renderStats(src || {});
     }
+    // Блок «Статистика по менеджерам» (данные — per-manager из getProjectStats за текущий период)
+    function strColor(s) {
+      const p = ['#2563eb','#16a34a','#ca8a04','#dc2626','#7c3aed','#0891b2'];
+      let h = 0; for (let i = 0; i < (s || '').length; i++) h = s.charCodeAt(i) + ((h << 5) - h);
+      return p[Math.abs(h) % p.length];
+    }
+    function lastActShort(s) {
+      const k = s && s.lastActivityKey || 0;
+      if (!k) return '—';
+      const y = Math.floor(k / 10000), m = Math.floor(k / 100) % 100, d = k % 100;
+      const then = new Date(y, m - 1, d); const today = new Date(); today.setHours(0, 0, 0, 0);
+      const diff = Math.round((today - then) / 86400000);
+      if (diff <= 0)  return s.lastActivityTime || 'сегодня';
+      if (diff === 1) return 'вчера';
+      return diff + ' дн.';
+    }
+    function renderManagers() {
+      const box = document.getElementById('mgr-list');
+      if (!box) return;
+      if (!_managers.length) { box.innerHTML = '<div class="mgr-empty">Нет менеджеров</div>'; return; }
+      box.innerHTML = _managers.map(m => {
+        const s = (_stats.managers && _stats.managers[m]) || {};
+        const comp = s.totalCompanies || 0;
+        const pctLead = comp ? Math.round((s.leadCompanies || 0) / comp * 100) : 0;
+        const total = s.totalContacts || 0, done = Math.max(0, total - (s.emptyContacts || 0));
+        const bs = s.byStatus || {};
+        const st = (label, key, cls) => '<span class="mst-item">' + label + ' <b' + (cls ? ' class="' + cls + '"' : '') + '>' + (bs[key] || 0) + '</b></span>';
+        const stMain = st('Недозвон', 'Недозвон', 'mst-orange')
+          + st('Отказ Сек', 'Отказ Сек', 'mst-red')
+          + st('Отказ ЛПР', 'Отказ ЛПР', 'mst-pink')
+          + st('КП Сек', 'КП Сек', 'mst-blue')
+          + st('Перезвон Сек', 'Перезвон Сек', 'mst-yellow')
+          + st('Перезвон ЛПР', 'Перезвон ЛПР', 'mst-amber');
+        const stJunk = [['Не абонент', 'Не абонент'], ['Дубль', 'Дубль'], ['Не компания', 'Не компания'], ['Частное лицо', 'Частное лицо']]
+          .filter(([, k]) => bs[k]).map(([lbl, k]) => st(lbl, k, 'mst-gray')).join('');
+        const stats = '<span class="mst-item">Диалогов <b>' + (s.totalDialogs || 0) + '</b></span>'
+          + '<span class="mst-item">Компаний <b>' + comp + '</b></span>'
+          + '<span class="mst-item">Лидов <b class="mst-green">' + (s.leadCompanies || 0) + '</b></span>'
+          + '<span class="mst-item">КП ЛПР <b class="mst-indigo">' + (s.kplprCompanies || 0) + '</b></span>'
+          + '<span class="mst-item">Конв. <b class="mst-green">' + pctLead + '%</b></span>'
+          + stMain + stJunk
+          + '<span class="mst-item">Обработано <b>' + done + '/' + total + '</b></span>'
+          + '<span class="mst-item">Активность <b>' + lastActShort(s) + '</b></span>';
+        return '<div class="mgr-row">'
+          + '<div class="mgr-av" style="background:' + strColor(m) + '">' + ((m[0] || '?').toUpperCase()) + '</div>'
+          + '<div class="mgr-info"><div class="mgr-name">' + esc(m) + '</div><div class="mgr-stats">' + stats + '</div></div>'
+          + '</div>';
+      }).join('');
+    }
     function computeRange() {
       const f = isoToKey(document.getElementById('r-from')?.value);
       const t = isoToKey(document.getElementById('r-to')?.value);
@@ -137,6 +189,7 @@
       if (btn) btn.classList.toggle('active', !_range);
       _stats = await fetchStats();
       renderStatsForResp();
+      renderManagers();
       allRows = buildRows(_range);
       renderTable();
       updateCounts();
@@ -227,7 +280,7 @@
       if (!list.length) { tbody.innerHTML = '<tr><td colspan="8" class="empty-cell">Нет данных</td></tr>'; renderTotals([]); return; }
       tbody.innerHTML = list.map(c => {
         const cls = STATUS_COLORS[c.result] || 'st-gray';
-        return '<tr' + (c.isLpr ? ' class="row-lpr"' : '') + '>'
+        return '<tr>'
           + '<td class="td-org">' + esc(c.org_name || '—') + '</td>'
           + '<td class="td-sec">' + esc(c.city || '—') + '</td>'
           + '<td class="td-pri">' + esc(c.lpr_name || '—') + '</td>'
@@ -359,6 +412,26 @@
     .search-box input { border:none; outline:none; font-size:13px; color:var(--text); width:180px; font-family:inherit; background:transparent; }
     .search-box input::placeholder { color:var(--muted); }
 
+    .mgr-card { background:var(--white); border:1px solid var(--border); border-radius:var(--rad); padding:14px 18px; box-shadow:var(--shadow); }
+    .mgr-title { font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:4px; }
+    .mgr-row { display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--border); }
+    .mgr-row:last-child { border-bottom:none; }
+    .mgr-av { width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:600; color:#fff; flex-shrink:0; }
+    .mgr-info { min-width:0; }
+    .mgr-name { font-size:13px; font-weight:600; color:var(--text); }
+    .mgr-stats { display:flex; flex-wrap:wrap; gap:10px; margin:3px 0; }
+    .mst-item { font-size:11px; color:var(--muted); white-space:nowrap; }
+    .mst-item b { color:var(--text); font-weight:600; }
+    .mst-item b.mst-green { color:#16a34a; }
+    .mst-item b.mst-indigo { color:#4338ca; }
+    .mst-item b.mst-red { color:#dc2626; }
+    .mst-item b.mst-orange { color:#c2410c; }
+    .mst-item b.mst-pink { color:#be185d; }
+    .mst-item b.mst-blue { color:#1d4ed8; }
+    .mst-item b.mst-yellow { color:#ca8a04; }
+    .mst-item b.mst-amber { color:#a16207; }
+    .mst-item b.mst-gray { color:#6b7280; }
+    .mgr-empty { font-size:13px; color:var(--muted); padding:8px 0; }
     .table-card { background:var(--white); border:1px solid var(--border); border-radius:var(--rad); overflow:hidden; box-shadow:var(--shadow); }
     table { width:100%; border-collapse:collapse; font-size:13px; table-layout:fixed; }
     col.c1{width:14%} col.c2{width:12%} col.c3{width:10%} col.c4{width:10%} col.c5{width:13%} col.c6{width:9%} col.c7{width:23%} col.c8{width:9%}
@@ -388,9 +461,6 @@
     .st-otkaz { background:#fce7f3; color:#be185d; }
     .st-nedoz { background:#ffedd5; color:#c2410c; }
     .st-gray  { background:#f3f4f6; color:#6b7280; }
-
-    tr.row-lpr td { background:#eef2ff; }
-    tr.row-lpr:hover td { background:#e0e7ff; }
 
     .totals { display:flex; gap:6px; flex-wrap:wrap; align-items:center; padding:11px 14px; background:#fafafa; border-top:1px solid var(--border); font-size:12px; color:var(--sec); }
     .totals b { color:var(--text); font-weight:600; }
@@ -465,6 +535,11 @@
       <span class="fn-item">Дозвон <b id="f-reach">0%</b></span>
       <span class="fn-item">Выход на ЛПР <b id="f-lpr">0%</b></span>
       <span class="fn-item">Отказов ЛПР <b class="fn-red" id="f-ref">0%</b></span>
+    </div>
+
+    <div class="mgr-card">
+      <div class="mgr-title">Статистика по менеджерам</div>
+      <div id="mgr-list"></div>
     </div>
 
     <div class="filter-bar">
