@@ -71,6 +71,7 @@
       if (rows.length <= n) { scrollEl.style.maxHeight = 'none'; return; }
       let h = table.tHead ? table.tHead.offsetHeight : 0;
       for (let i = 0; i < n && i < rows.length; i++) h += rows[i].offsetHeight;
+      if (h < 60) { scrollEl.style.maxHeight = 'none'; return; }   // блок скрыт/не измерен — не ограничиваем
       scrollEl.style.maxHeight = (h + 15) + 'px';   // +полоса горизонтальной прокрутки
     }
     // Клик по заголовку блока статистики → сортировка (стрелка ▲/▼)
@@ -154,6 +155,9 @@
         ]);
         _raw   = (allData && allData.ok && Array.isArray(allData.clients)) ? allData.clients : [];
         _stats = statsData;
+        // показываем блок ДО рендеров — иначе измерение высоты строк (limitToRows) даёт 0
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('main').style.display    = 'block';
         renderStatsForResp();
         renderManagers();
         renderSources();
@@ -162,9 +166,6 @@
         allRows = buildRows(_range);
         renderTable();
         updateCounts();
-
-        document.getElementById('loading').style.display = 'none';
-        document.getElementById('main').style.display    = 'block';
         document.getElementById('upd-time').textContent  = 'обновлено ' + new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
       } catch (e) {
         document.getElementById('loading').textContent = 'Ошибка: ' + e.message;
@@ -181,11 +182,14 @@
     async function fetchStats() {
       let url = BASE_WEBHOOK + '?action=getProjectStats&spreadsheetId=' + _sid + '&managers=' + _mParam;
       if (_range) url += '&from=' + _range.from + '&to=' + _range.to;
-      try {
-        const resp = await fetch(url);
-        const data = await resp.json();
-        return (data && data.ok) ? { project: data.project || {}, managers: data.managers || {}, rubrics: data.rubrics || {} } : { project: {}, managers: {}, rubrics: {} };
-      } catch (e) { return { project: {}, managers: {}, rubrics: {} }; }
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const resp = await fetch(url);
+          const data = await resp.json();
+          if (data && data.ok) return { project: data.project || {}, managers: data.managers || {}, rubrics: data.rubrics || {} };
+        } catch (e) { /* повтор */ }
+      }
+      return { project: {}, managers: {}, rubrics: {} };
     }
     // Сводка: по выбранному ответственному (per-manager) либо по всему проекту
     function renderStatsForResp() {
