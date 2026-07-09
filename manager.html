@@ -859,6 +859,12 @@
         await addDoc(collection(db,'projects',PROJECT_ID,'clients'), clientData);
         showStatus('ok', '"' + org + '" сохранён');
         clearFormFields();
+        // Запись в лист ТОЛЬКО через markDone: он сам находит первую свободную
+        // попытку (1..6), поэтому повторный звонок по этой же карточке пишется как
+        // новая попытка в ту же строку. _currentSheetRow НЕ обнуляем — раньше из-за
+        // обнуления второй звонок уходил в POST/appendNewRow и создавал битую строку
+        // в таблице (+ дубль в Firestore, + лишняя дельта в кэш статистики).
+        // Случайный двойной клик уже заблокирован: clearFormFields() сбросил статус.
         if (window._currentSheetRow) {
           const sid2 = window._spreadsheetId ? '&spreadsheetId=' + window._spreadsheetId : '';
           const url = WEBHOOK + '?action=markDone&row=' + window._currentSheetRow
@@ -868,11 +874,8 @@
             + '&project='+ encodeURIComponent(PROJECT_ID)
             + sid2;
           fetch(url, {mode:'no-cors'}).catch(()=>{});
-          window._currentSheetRow = null;
         } else {
-          const postBody = Object.assign({}, clientData);
-          if (window._spreadsheetId) postBody.spreadsheetId = window._spreadsheetId;
-          fetch(WEBHOOK, {method:'POST',mode:'no-cors',body:JSON.stringify({data:postBody})}).catch(()=>{});
+          console.warn('saveClient: нет _currentSheetRow — запись в лист пропущена (данные уже в Firestore)');
         }
         // снимок вклада компании ДО обновления карточки (для живого инкремента статистики)
         const _statsBefore = window._allClients[window._currentIdx] ? statsSnapshotBefore(window._allClients[window._currentIdx]) : null;
