@@ -180,6 +180,19 @@
 
     // Сводка с сервера за текущий диапазон (getProjectStats)
     async function fetchStats() {
+      // Вид «Всего» (без диапазона дат) — читаем готовые счётчики из Firestore (мгновенно, без скана)
+      if (!_range) {
+        try {
+          const snap = await getDoc(doc(db, 'project_stats', PROJECT));
+          if (snap.exists()) {
+            const d = snap.data() || {};
+            if (d.project && Object.keys(d.project).length) {
+              return { project: d.project, managers: d.managers || {}, rubrics: d.rubrics || {} };
+            }
+          }
+        } catch (e) { /* счётчиков нет — падаем на живой скан */ }
+      }
+      // Диапазон дат либо счётчики ещё не посеяны — живой скан getProjectStats (как раньше)
       let url = BASE_WEBHOOK + '?action=getProjectStats&spreadsheetId=' + _sid + '&managers=' + _mParam;
       if (_range) url += '&from=' + _range.from + '&to=' + _range.to;
       for (let attempt = 0; attempt < 2; attempt++) {
@@ -195,6 +208,11 @@
     function renderStatsForResp() {
       const src = (_resp && _stats.managers && _stats.managers[_resp]) ? _stats.managers[_resp] : _stats.project;
       renderStats(src || {});
+      const el = document.getElementById('stats-warn');
+      if (el) {
+        const empty = !_stats.project || Object.keys(_stats.project).length === 0;
+        el.style.display = (empty && _raw.length > 0) ? 'block' : 'none';
+      }
     }
     // Блок «Статистика по менеджерам» (данные — per-manager из getProjectStats за текущий период)
     function strColor(s) {
@@ -509,6 +527,7 @@
     .dm-apply { padding:6px 16px; border-radius:6px; border:none; background:var(--accent); color:#fff; font-size:13px; font-weight:600; cursor:pointer; font-family:inherit; }
     .dm-apply:hover { opacity:.9; }
 
+    .stats-warn { background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; border-radius:var(--rad); padding:10px 14px; font-size:13px; }
     .stats { display:grid; grid-template-columns:repeat(5,1fr); gap:12px; background:var(--white); border:1px solid var(--border); border-radius:var(--rad); padding:20px; box-shadow:var(--shadow); }
     .stat-item { display:flex; flex-direction:column; gap:2px; align-items:center; justify-content:center; text-align:center; padding:0 10px; }
     .stat-item + .stat-item { border-left:1px solid var(--border); }
@@ -630,6 +649,7 @@
       <select id="resp-filter" class="dinp" onchange="setResp(this.value)"><option value="">Все</option></select>
     </div>
 
+    <div id="stats-warn" class="stats-warn" style="display:none">⚠ Статистика не загрузилась — вероятно, перегрузка или суточная квота Apps Script. Контакты ниже подгружены. Нажмите «Обновить» (или попробуйте позже).</div>
     <div class="stats">
       <div class="stat-item">
         <div class="stat-n" id="s-done">0</div>

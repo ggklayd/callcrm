@@ -692,6 +692,44 @@
       }
     };
 
+    // ── Пересчитать статистику → счётчики в Firestore (project_stats) ───
+    window.recalcStats = async function() {
+      const id = window._dpId;
+      const p  = window.projects[id];
+      if (!p || !p.sheets_url) { toast('Сначала укажите ссылку на Google Таблицу'); return; }
+      const match = p.sheets_url.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+      if (!match) { toast('Неверная ссылка на таблицу'); return; }
+      const sheetId  = match[1];
+      const managers = (p.managers || []).filter(Boolean);
+
+      const btn  = document.getElementById('btn-recalc');
+      const orig = btn.innerHTML;
+      btn.disabled    = true;
+      btn.textContent = 'Считаю...';
+
+      try {
+        const url  = BASE_WEBHOOK + '?action=getProjectStats&spreadsheetId=' + sheetId + '&managers=' + encodeURIComponent(managers.join(','));
+        const resp = await fetch(url);
+        const data = await resp.json();
+        if (!data.ok) throw new Error(data.error || 'ошибка расчёта');
+
+        await setDoc(doc(db, 'project_stats', id), {
+          project:  data.project  || {},
+          managers: data.managers || {},
+          rubrics:  data.rubrics  || {},
+          updatedAt: serverTimestamp()
+        });
+
+        btn.textContent = '✓ Пересчитано';
+        btn.style.background = '#16a34a';
+        toast('Статистика пересчитана и сохранена');
+      } catch (err) {
+        btn.disabled = false;
+        btn.innerHTML = orig;
+        toast('Ошибка: ' + err.message);
+      }
+    };
+
     // ── Создать интерфейс в Google Sheets ───────────────────────
     window.createInterface = async function() {
       const id = window._dpId;
@@ -1130,6 +1168,10 @@
       <p style="font-size:13px;color:var(--sec);margin:16px 0 10px;line-height:1.5">Определить часовой пояс каждого контакта по столбцам «Регион» и «Населённый пункт» и записать в новый столбец «Часовой пояс» в конце таблицы.</p>
       <button id="btn-fill-tz" onclick="fillTimezones()" style="display:flex;align-items:center;gap:7px;padding:9px 18px;background:#0f766e;color:#fff;border:none;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .15s">
         &#128336; Определить часовые пояса
+      </button>
+      <p style="font-size:13px;color:var(--sec);margin:16px 0 10px;line-height:1.5">Пересчитать статистику проекта из таблицы и сохранить в быстрый кэш (Firestore). Отчёт (вид «Всего») будет читать этот кэш мгновенно, без скана. Нажимайте после большой загрузки базы или для сверки.</p>
+      <button id="btn-recalc" onclick="recalcStats()" style="display:flex;align-items:center;gap:7px;padding:9px 18px;background:#7c3aed;color:#fff;border:none;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .15s">
+        &#8635; Пересчитать статистику
       </button>
     </div>
 
