@@ -8,7 +8,7 @@
 
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-    import { getFirestore, collection, addDoc, setDoc, doc, serverTimestamp, query, where, getDocs, onSnapshot, orderBy }
+    import { getFirestore, collection, addDoc, setDoc, doc, updateDoc, increment, FieldPath, serverTimestamp, query, where, getDocs, onSnapshot, orderBy }
       from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
     const firebaseConfig = {
@@ -719,6 +719,75 @@
       if (el) el.textContent = (idx + 1) + ' / ' + total + ' · обработано: ' + done;
     };
 
+    // ══════════════════════════════════════════════════════════════
+    //  Живой инкремент статистики (Этап 1.2). Движок сверен с сервером 30/30.
+    //  Считает вклад компании «до/после» сохранения и инкрементирует
+    //  project_stats дельтой (проект + этот менеджер + рубрика).
+    // ══════════════════════════════════════════════════════════════
+    const _DIALOG   = ['Отказ Сек','Отказ ЛПР','КП Сек','КП ЛПР','Перезвон Сек','Перезвон ЛПР','Лид'];
+    const _CALLBACK = ['Перезвон Сек','Перезвон ЛПР'];
+    const _VOID     = ['Не компания','Частное лицо'];
+    const _LPR      = ['Отказ ЛПР','КП ЛПР','Перезвон ЛПР','Лид'];
+    const _REFUSE   = ['Отказ ЛПР'];
+    const _SF       = ['totalContacts','emptyContacts','totalDialogs','totalCompanies','leadCompanies','kplprCompanies','interestedCompanies','lprCompanies','refusedCompanies','attemptedCompanies','firstReachedCompanies'];
+    function _snorm(v){ const s=(v==null)?'':String(v).trim(); return s.toLowerCase()==='перезвон сек'?'Перезвон Сек':s; }
+    function _sacc(){ const a={}; _SF.forEach(f=>a[f]=0); a.byStatus={}; return a; }
+    function _contribProject(c){
+      const a=_sacc(); const org=(c.org_name||'').trim(); const R=[]; for(let i=1;i<=6;i++)R.push(_snorm(c['result'+i]));
+      if(org)a.totalContacts++; if(org&&!R[0])a.emptyContacts++;
+      let cc=false,lead=false,kp=false,att=false,ref=false,lpr=false,fr=false;
+      for(let i=0;i<6;i++){ const r=R[i]; if(!r)continue; att=true; a.byStatus[r]=(a.byStatus[r]||0)+1;
+        if(i===0&&_DIALOG.includes(r))fr=true; if(_DIALOG.includes(r))a.totalDialogs++;
+        if(_REFUSE.includes(r))ref=true; if(_LPR.includes(r))lpr=true; if(r==='Лид')lead=true; if(r==='КП ЛПР')kp=true;
+        if(!cc&&_DIALOG.includes(r)){ if(_CALLBACK.includes(r)){ let v=false; for(let j=i+1;j<6;j++){ if(_VOID.includes(R[j])){v=true;break;} } if(!v){a.totalCompanies++;cc=true;} } else { a.totalCompanies++;cc=true; } } }
+      if(cc){ if(lead)a.leadCompanies++; if(kp)a.kplprCompanies++; if(lead||kp)a.interestedCompanies++; if(lpr)a.lprCompanies++; if(ref)a.refusedCompanies++; }
+      if(org&&att)a.attemptedCompanies++; if(org&&fr)a.firstReachedCompanies++; return a;
+    }
+    function _contribManager(c,mgr){
+      const ml=(mgr||'').trim().toLowerCase(); const a=_sacc(); const org=(c.org_name||'').trim();
+      const R=[],M=[]; for(let i=1;i<=6;i++){ R.push(_snorm(c['result'+i])); M.push((c['manager'+i]||'').trim().toLowerCase()); }
+      const resp=(c.assigned||'').trim().toLowerCase(); let touched=resp===ml;
+      if(!touched){ for(let i=0;i<6;i++){ if(M[i]===ml){touched=true;break;} } }
+      if(org&&touched){ a.totalContacts++; if(!R[0])a.emptyContacts++; }
+      let cc=false,lead=false,kp=false,att=false,ref=false,lpr=false,fr=false;
+      for(let i=0;i<6;i++){ if(M[i]!==ml)continue; const r=R[i]; if(!r)continue; a.byStatus[r]=(a.byStatus[r]||0)+1; att=true;
+        if(i===0&&_DIALOG.includes(r))fr=true; if(_DIALOG.includes(r))a.totalDialogs++;
+        if(_REFUSE.includes(r))ref=true; if(_LPR.includes(r))lpr=true; if(r==='Лид')lead=true; if(r==='КП ЛПР')kp=true;
+        if(!cc&&_DIALOG.includes(r)){ if(_CALLBACK.includes(r)){ let v=false; for(let j=i+1;j<6;j++){ if(_VOID.includes(R[j])){v=true;break;} } if(!v){a.totalCompanies++;cc=true;} } else { a.totalCompanies++;cc=true; } } }
+      if(cc){ if(lead)a.leadCompanies++; if(kp)a.kplprCompanies++; if(lead||kp)a.interestedCompanies++; if(lpr)a.lprCompanies++; if(ref)a.refusedCompanies++; }
+      if(org&&att)a.attemptedCompanies++; if(org&&fr)a.firstReachedCompanies++; return a;
+    }
+    function _statDelta(before,after){
+      const d={}; _SF.forEach(f=>{ const v=(after[f]||0)-(before[f]||0); if(v)d[f]=v; });
+      const bs={}; const keys=new Set([...Object.keys(before.byStatus||{}),...Object.keys(after.byStatus||{})]);
+      keys.forEach(k=>{ const v=(after.byStatus[k]||0)-(before.byStatus[k]||0); if(v)bs[k]=v; });
+      if(Object.keys(bs).length)d.byStatus=bs; return d;
+    }
+    function _pushDelta(updates,prefix,delta){
+      const pre=Array.isArray(prefix)?prefix:[prefix];
+      for(const f of _SF){ if(delta[f]) updates.push(new FieldPath(...pre,f), increment(delta[f])); }
+      if(delta.byStatus){ for(const k in delta.byStatus){ updates.push(new FieldPath(...pre,'byStatus',k), increment(delta.byStatus[k])); } }
+    }
+    // Снимок вклада компании ДО сохранения (карточка ещё со старыми попытками)
+    function statsSnapshotBefore(cv){
+      try { return { proj:_contribProject(cv), mgr:_contribManager(cv,MANAGER), rub:((cv.rubric||'').toString().trim())||'(без рубрики)' }; }
+      catch(e){ return null; }
+    }
+    // Инкремент project_stats дельтой. FAIL-SAFE: никогда не роняет сохранение звонка.
+    async function statsBumpAfter(cv, before){
+      try {
+        if(!cv || !before) return;
+        const dProj=_statDelta(before.proj,_contribProject(cv));
+        const dMgr =_statDelta(before.mgr, _contribManager(cv,MANAGER));
+        const updates=[];
+        _pushDelta(updates,'project',dProj);
+        _pushDelta(updates,['managers',MANAGER],dMgr);
+        _pushDelta(updates,['rubrics',before.rub],dProj);   // рубрика = вклад проекта на эту рубрику
+        if(!updates.length) return;
+        await updateDoc(doc(db,'project_stats',PROJECT_ID), ...updates);   // если документа нет — упадёт в catch, кэш посеется «Пересчитать»
+      } catch(e){ /* кэш всегда чинится кнопкой «Пересчитать» */ }
+    }
+
     window.saveClient = async function() {
       const org    = gv('f-org').trim();
       const phone  = gv('f-phone').trim();
@@ -805,6 +874,8 @@
           if (window._spreadsheetId) postBody.spreadsheetId = window._spreadsheetId;
           fetch(WEBHOOK, {method:'POST',mode:'no-cors',body:JSON.stringify({data:postBody})}).catch(()=>{});
         }
+        // снимок вклада компании ДО обновления карточки (для живого инкремента статистики)
+        const _statsBefore = window._allClients[window._currentIdx] ? statsSnapshotBefore(window._allClients[window._currentIdx]) : null;
         if (window._allClients[window._currentIdx]) {
           window._allClients[window._currentIdx].status = 'обработан';
           const cv = window._allClients[window._currentIdx];
@@ -817,6 +888,7 @@
               break;
             }
           }
+          statsBumpAfter(window._allClients[window._currentIdx], _statsBefore);   // fail-safe, в фоне, не блокирует сохранение
         }
         updateProgress();
         renderClientsInSidebar();
